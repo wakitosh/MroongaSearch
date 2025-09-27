@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 
+## [4.0.1] - 2025-09-27
+
+### Added
+- Interoperability: Clarified and stabilized the tokenization helper contract so other modules (e.g., IiifSearchCarousel) can safely call morphological tokenization when Mroonga/TokenMecab is available, and seamlessly fall back when not.
+
+### Changed
+- Minor documentation and comments for integration scenarios.
+
+### Compatibility
+- No schema or behavior change required for existing installations. Works whether TokenMecab is installed or not (dependent modules must handle fallback).
+
 ## [4.0.0] - 2025-09-26
 
 Repository: https://github.com/wakitosh/MroongaSearch

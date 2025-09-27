@@ -94,6 +94,41 @@ If TokenMecab is available, the module sets a table COMMENT to specify the token
 `COMMENT 'tokenizer "TokenMecab"'` so that Mroonga uses MeCab.
 TokenMecab が利用可能な場合は、テーブルに `COMMENT 'tokenizer "TokenMecab"'` を付与して Mroonga に MeCab を使わせます。
 
+## Integration with other modules / 他モジュール連携
+
+This module does not require or expose a public PHP API for tokenization. Instead, it configures the database so that, when available, Mroonga uses MeCab (TokenMecab) for full-text indexing and querying. Other modules should treat morphological tokenization as an optional capability and implement graceful fallbacks.
+
+本モジュールはトークナイズのための公開 PHP API を提供しません。代わりに、利用可能な環境では DB 側で Mroonga が MeCab（TokenMecab）を用いるよう設定します。他モジュールは「形態素トークナイズは任意機能」と捉え、常にフォールバック可能な実装にしてください。
+
+### Recommended integration pattern / 推奨パターン
+
+- Do not hard-require this module. Feature-detect availability instead.
+- When you need standalone tokenization (e.g., generating example keywords in UI), implement your own helper that attempts morphological tokenization and falls back to a simple segmenter (regex/CJK-aware) when unavailable.
+- For DB search, rely on the full-text index: if TokenMecab is active, Mroonga will tokenize appropriately at query time.
+
+- 本モジュールを必須依存にしない。機能検出で可用性を判断。
+- UI 側で独自にトークナイズが必要な場合（例：例示キーワード生成）、自前のヘルパを用意し、形態素解析に失敗・未導入時は正規表現等の簡易セグメンタにフォールバックする。
+- DB 検索はフルテキストインデックスに任せる。TokenMecab が有効ならクエリ時に Mroonga が適切にトークナイズします。
+
+### How to detect TokenMecab at DB level / DB レベルでの TokenMecab 判定
+
+You may check the table comment of `fulltext_search` via `information_schema.TABLES`. If it contains `tokenizer "TokenMecab"`, MeCab is active for that table. Example SQL:
+
+```sql
+SELECT TABLE_COMMENT
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+	AND TABLE_NAME = 'fulltext_search';
+```
+
+`TABLE_COMMENT` に `tokenizer "TokenMecab"` が含まれていれば、有効です。環境によってはコメント情報が異なる場合があるため、判定に過度に依存しないでください。常にフォールバックを実装する前提を推奨します。
+
+### Example: IiifSearchCarousel
+
+IiifSearchCarousel module can leverage morphological tokens when available to produce better “For example” keywords while still working without MeCab/Mroonga. It should always try-and-fallback to keep the UI robust.
+
+IiifSearchCarousel モジュールは、TokenMecab が利用可能な場合に形態素トークンを活用してより良い「例えば」表示を行い、未導入でもフォールバックして動作可能です。常に try-and-fallback の実装を推奨します。
+
 ## Changes from Original
 
 - Verified and updated compatibility with Omeka S 4.x

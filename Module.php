@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MroongaSearch;
 
 use Doctrine\DBAL\Connection;
+use Laminas\Mvc\MvcEvent;
 use Laminas\ServiceManager\ServiceLocatorInterface;
 use Omeka\Module\AbstractModule;
 use Omeka\Module\Exception\ModuleCannotInstallException;
@@ -19,6 +20,79 @@ use Omeka\Stdlib\Message;
  * - On uninstall: switches back to InnoDB and restores FK if missing.
  */
 class Module extends AbstractModule {
+
+  /**
+   * Attach AND/OR aware full-text tweaks after core has built its query.
+   */
+  public function onBootstrap(MvcEvent $event): void {
+    parent::onBootstrap($event);
+    $application = $event->getApplication();
+    $shared = $application->getEventManager()->getSharedManager();
+    // Run after core listeners (use low/negative priority).
+    $shared->attach('*', 'api.search.query', function ($ev) {
+      try {
+        $adapter = $ev->getTarget();
+        // Ensure this is an entity adapter (has required API methods).
+        if (!method_exists($adapter, 'createAlias') || !method_exists($adapter, 'getResourceName') || !method_exists($adapter, 'createNamedParameter')) {
+          return;
+        }
+        $request = $ev->getParam('request');
+        $qb = $ev->getParam('queryBuilder');
+        if (!$request || !$qb) {
+          return;
+        }
+        $query = $request->getContent();
+        $full = isset($query['fulltext_search']) ? trim((string) $query['fulltext_search']) : '';
+        if ($full == '') {
+          return;
+        }
+        // Force AND for multi-token queries regardless of incoming 'logic'.
+        // Single continuous CJK term: require phrase match (AND/OR regardless).
+        $tokens = $this->tokenizeFulltext($full);
+        if (count($tokens) <= 1) {
+          if ($this->isCjkContinuous($full)) {
+            $alias = $adapter->createAlias();
+            $joinConditions = sprintf(
+              '%s.id = omeka_root.id AND %s.resource = %s',
+              $alias,
+              $alias,
+              $adapter->createNamedParameter($qb, $adapter->getResourceName())
+            );
+            $qb->innerJoin('Omeka\\Entity\\FulltextSearch', $alias, 'WITH', $joinConditions);
+            $phrase = '"' . $full . '"';
+            $match = sprintf(
+              'MATCH(%s.title, %s.text) AGAINST (%s IN BOOLEAN MODE)',
+              $alias,
+              $alias,
+              $adapter->createNamedParameter($qb, $phrase)
+            );
+            $qb->andWhere($match . ' > 0');
+          }
+          return;
+        }
+        // Logic === 'and': enforce all tokens presence using extra MATCH>0.
+        $alias = $adapter->createAlias();
+        $joinConditions = sprintf(
+          '%s.id = omeka_root.id AND %s.resource = %s',
+          $alias,
+          $alias,
+          $adapter->createNamedParameter($qb, $adapter->getResourceName())
+        );
+        $qb->innerJoin('Omeka\\Entity\\FulltextSearch', $alias, 'WITH', $joinConditions);
+        foreach ($tokens as $tok) {
+          $match = sprintf('MATCH(%s.title, %s.text) AGAINST (%s)',
+            $alias,
+            $alias,
+            $adapter->createNamedParameter($qb, $tok)
+          );
+          $qb->andWhere($match . ' > 0');
+        }
+      }
+      catch (\Throwable $e) {
+        // Fail silently to avoid breaking search in case of unexpected issues.
+      }
+    }, -100);
+  }
 
   /**
    * Return module configuration.
@@ -158,6 +232,96 @@ class Module extends AbstractModule {
       }
     }
     return FALSE;
+  }
+
+  /**
+   * Tokenize a full-text query into words and quoted phrases.
+   */
+  protected function tokenizeFulltext(string $str): array {
+    $str = trim($str);
+    if ($str === '') {
+      return [];
+    }
+    $tokens = [];
+    // Extract quoted phrases first using a simple parser
+    // (supports \" inside quotes).
+    $consumedChars = [];
+    $in = FALSE;
+    $escape = FALSE;
+    $buf = '';
+    $len = strlen($str);
+    for ($i = 0; $i < $len; $i++) {
+      $ch = $str[$i];
+      if ($in) {
+        if ($escape) {
+          $buf .= $ch;
+          $escape = FALSE;
+          continue;
+        }
+        if ($ch === '\\') {
+          $escape = TRUE;
+          continue;
+        }
+        if ($ch === '"') {
+          $in = FALSE;
+          $ph = trim(str_replace('\"', '"', $buf));
+          if ($ph !== '') {
+            $tokens[] = $ph;
+          }
+          $buf = '';
+          $consumedChars[] = ' ';
+          continue;
+        }
+        // Inside quotes: accumulate into buffer, do not add to consumed.
+        $buf .= $ch;
+        continue;
+      }
+      // Not in quotes.
+      if ($ch === '"') {
+        $in = TRUE;
+        $consumedChars[] = ' ';
+        continue;
+      }
+      $consumedChars[] = $ch;
+    }
+    $consumed = implode('', $consumedChars);
+    // Split remaining by whitespace.
+    foreach (preg_split('/\s+/u', $consumed) as $w) {
+      $w = trim($w);
+      if ($w !== '') {
+        $tokens[] = $w;
+      }
+    }
+    // De-duplicate and cap.
+    $tokens = array_values(array_unique($tokens));
+    if (count($tokens) > 20) {
+      $tokens = array_slice($tokens, 0, 20);
+    }
+    return $tokens;
+  }
+
+  /**
+   * Check if the string is a single continuous CJK term (no spaces, length>=2).
+   */
+  protected function isCjkContinuous(string $str): bool {
+    $str = trim($str);
+    if ($str === '') {
+      return FALSE;
+    }
+    // Must not contain whitespace.
+    if (preg_match('/\s/u', $str)) {
+      return FALSE;
+    }
+    // Allow only CJK scripts and common Japanese marks.
+    if (!preg_match('/^[\p{Han}\p{Hiragana}\p{Katakana}々〆ヶー]+$/u', $str)) {
+      return FALSE;
+    }
+    // At least 2 code points to avoid extremely short noisy tokens.
+    if (function_exists('mb_strlen')) {
+      return mb_strlen($str, 'UTF-8') >= 2;
+    }
+    // Fallback; byte length is acceptable here.
+    return strlen($str) >= 2;
   }
 
 }
