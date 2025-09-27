@@ -50,24 +50,8 @@ class Module extends AbstractModule {
         // Single continuous CJK term: require phrase match (AND/OR regardless).
         $tokens = $this->tokenizeFulltext($full);
         if (count($tokens) <= 1) {
-          if ($this->isCjkContinuous($full)) {
-            $alias = $adapter->createAlias();
-            $joinConditions = sprintf(
-              '%s.id = omeka_root.id AND %s.resource = %s',
-              $alias,
-              $alias,
-              $adapter->createNamedParameter($qb, $adapter->getResourceName())
-            );
-            $qb->innerJoin('Omeka\\Entity\\FulltextSearch', $alias, 'WITH', $joinConditions);
-            $phrase = '"' . $full . '"';
-            $match = sprintf(
-              'MATCH(%s.title, %s.text) AGAINST (%s IN BOOLEAN MODE)',
-              $alias,
-              $alias,
-              $adapter->createNamedParameter($qb, $phrase)
-            );
-            $qb->andWhere($match . ' > 0');
-          }
+          // 単一語のときはコアの自然言語検索（デフォルト動作）に任せる。
+          // 以前は連続CJKでフレーズを強制していたが撤廃した。.
           return;
         }
         // Logic === 'and': enforce all tokens presence using extra MATCH>0.

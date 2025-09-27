@@ -15,6 +15,14 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Compatibility
 - No schema or behavior change required for existing installations. Works whether TokenMecab is installed or not (dependent modules must handle fallback).
 
+## [4.0.2] - 2025-09-28
+
+### Changed
+- Remove forced phrase search for a single continuous CJK term. For single-term queries, fall back to Omeka core's natural language fulltext behavior. Multi-term queries continue to be enforced as AND (each token must match), which aligns with the module's intent.
+
+### Rationale
+- Users expect a single CJK term like 「鯰」 or 「北野」 to behave the same as Omeka default fulltext. Enforcing a phrase could narrow results unexpectedly, especially with variations in tokenization.
+
 ## [4.0.0] - 2025-09-26
 
 Repository: https://github.com/wakitosh/MroongaSearch
