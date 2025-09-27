@@ -13,6 +13,7 @@ This is a further modified version. The lineage is:
 **Modified Repository:** https://github.com/fukudakz/Omeka-S-module-mroonga-search/
 
 **Further modified by:** Toshihito Waki
+**Modified Repository:** https://github.com/wakitosh/MroongaSearch
 
 ## About This Modified Version
 
@@ -54,14 +55,6 @@ dashboard. Read the
 [user manual of Omeka S](https://omeka.org/s/docs/user-manual/modules/)
 for further information.
 
-### From GitHub
-
-```bash
-git clone https://github.com/fukudakz/Omeka-S-module-mroonga-search.git
-cd Omeka-S-module-mroonga-search
-# Rename the directory to MroongaSearch in the modules directory
-```
-
 ### Configuration
 
 No configuration is needed. Once installed, the database will be updated,
@@ -73,14 +66,6 @@ Simply uninstall this module to remove Mroonga settings from your database.
 No additional work is needed.
 
 ## Notes
-
-This module highly depends on the database structure of Omeka S 3.x and 4.x. If you are
-upgrading Omeka S from 3.x to 4.x or later, we highly recommend you uninstall
-this module **before upgrading**.
-
-We have not heavily tested the Mroonga engine with large-sized data yet. For
-an advanced full-text search, we recommend that you check the
-[Solr module](https://omeka.org/s/modules/Solr/).
 
 This version automatically uses MeCab tokenizer (TokenMecab) when available. If TokenMecab is not installed, it falls back to the default behavior safely.
 
@@ -139,16 +124,6 @@ IiifSearchCarousel モジュールは、TokenMecab が利用可能な場合に�
 - Improved bilingual (EN/JA) actionable error messages
 - Documentation updates and cleanup
 
-## TODOs
-
-* Enabling synonyms
-* Support for additional parsers (MeCab, etc.)
-* Performance optimizations
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 ## License
 
 This modified version is released under the MIT License, same as the original.
@@ -156,6 +131,6 @@ This modified version is released under the MIT License, same as the original.
 Credits:
 - Original: Kentaro Fukuchi — https://github.com/fukuchi/Omeka-S-module-mroonga-search
 - First modification: Kazufumi Fukuda — https://github.com/fukudakz/Omeka-S-module-mroonga-search/
-- Further modifications: Toshihito Waki
+- Further modifications: Toshihito Waki — https://github.com/wakitosh/MroongaSearch
 
 See the `LICENSE` file for details.
