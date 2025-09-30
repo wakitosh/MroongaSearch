@@ -1,181 +1,125 @@
-# Mroonga Search for Omeka S (Enhanced) / オメカS向け Mroonga 検索（改良版）
+# MroongaSearch for Omeka S
 
-Lineage: 1) Original by Kentaro Fukuchi → 2) Modified by Kazufumi Fukuda → 3) Enhanced by Toshihito Waki.
+This module dramatically improves Japanese full-text search capabilities in Omeka S. It operates in two modes, depending on your server environment, ensuring enhanced search functionality is always available.
 
----
+First and foremost, **this module enables meaningful Japanese full-text search even on a standard Omeka S installation without the Mroonga storage engine.** It intelligently uses the database's built-in features to provide strict `AND`/`OR` search logic, a feature missing in the default Omeka S setup for CJK languages.
 
-## What this module does / 概要
+If the Mroonga engine is installed and active, the module automatically upgrades the search functionality to use it, providing even faster and more powerful full-text search.
 
-- Switch `fulltext_search` to Mroonga engine for CJK-ready full-text.
-	`fulltext_search` テーブルのストレージエンジンを Mroonga に切り替え、CJK 向け全文検索を有効化します。
-- Auto-enable MeCab (TokenMecab) when available; safe fallback when not.
-	TokenMecab が利用可能なら自動使用、未導入時は安全にフォールバックします。
-- Strict AND/OR semantics for multi-term queries (UI: `logic` or `fulltext_logic`).
-	複数語クエリに対し、厳密な AND/OR を提供します（UI パラメータ: `logic` または `fulltext_logic`）。
-- Ensure `FULLTEXT(title, text)` index after engine changes.
-	エンジン切替後に `FULLTEXT(title, text)` インデックスを自動保証します。
-- Uninstall reverts to InnoDB (best-effort FK restore).
-	アンインストール時は InnoDB に戻し、外部キーの復元を試みます。
+## Module History
 
-## Requirements / 要件
+- **Original:** [Kentaro Fukuchi](https://github.com/fukuchi/Omeka-S-module-mroonga-search)
+- **Modified:** [Kazufumi Fukuda](https://github.com/fukudakz/Omeka-S-module-mroonga-search/)
+- **Enhanced:** [Toshihito Waki](https://github.com/wakitosh/MroongaSearch)
 
-- MariaDB 10.5+ or MySQL compatible with Mroonga
-- Mroonga plugin installed and ACTIVE / Mroonga プラグインが導入・有効
-- Optional: `groonga-tokenizer-mecab` for MeCab / 任意: `groonga-tokenizer-mecab`
+This version has been significantly enhanced to provide robust fallback mechanisms, safer installation/uninstallation, and improved search logic.
 
-Before enabling, back up your database. This module changes table engine and may trigger index rebuilds.
-有効化前に必ずバックアップしてください。テーブルエンジン変更やインデックス再構築が発生します。
+## Key Features
 
-## Install / インストール
+1.  **Enhanced Japanese Full-Text Search (without Mroonga):**
+    - On a standard database engine (InnoDB), Omeka S's default full-text search does not work well for Japanese. This module provides an alternative that enables a pseudo-full-text search by using `LIKE` for CJK (Chinese, Japanese, Korean) languages.
 
-1) Install and activate Mroonga. On Debian/Ubuntu + MariaDB: `mariadb-plugin-mroonga`.
-	 Mroonga を導入・有効化します（Debian/Ubuntu + MariaDB 例: `mariadb-plugin-mroonga`）。
-2) Optional: install `groonga-tokenizer-mecab` for MeCab.
-	 任意: MeCab 用 `groonga-tokenizer-mecab` を導入します。
-3) Place this module under `modules/MroongaSearch` and enable it in admin.
-	 本モジュールを `modules/MroongaSearch` に配置し、管理画面で有効化します。
+2.  **Mroonga-Powered Search (with Mroonga):**
+    - If the Mroonga plugin is active in your database, the module will automatically alter the `fulltext_search` table to use the Mroonga engine.
+    - This provides high-speed, CJK-aware full-text search.
 
-On enable / 有効化時の動作:
-- Check Mroonga plugin is ACTIVE.
-	Mroonga の有効状態を検証します。
-- Try `ALTER TABLE fulltext_search ENGINE=Mroonga COMMENT='table "ms_fulltext" tokenizer "TokenMecab"'` (falls back if TokenMecab is unavailable).
-	`ALTER TABLE ... ENGINE=Mroonga` を実行（TokenMecab がなければ従来トークナイザを使用）。
-- If ALTER fails, cleanup orphan Groonga objects, then DROP/CREATE with Mroonga and dispatch `IndexFulltextSearch`.
-	ALTER 失敗時は孤児オブジェクトを清掃後、DROP/CREATE による再作成と再索引ジョブを実行します。
-- Ensure `FULLTEXT(title, text)` exists to avoid 1191 errors.
-	1191 回避のため `FULLTEXT(title, text)` を保証します。
+3.  **MeCab Tokenizer Support (Optional):**
+    - For even more accurate Japanese searches, the module supports `groonga-tokenizer-mecab`.
+    - Using MeCab for morphological analysis allows the search to correctly understand word boundaries in Japanese text.
+    - If the MeCab tokenizer is not available, the module automatically uses Mroonga's standard tokenizer.
 
-## Uninstall / アンインストール
+4.  **Strict `AND` / `OR` Logic:**
+    - Unlike Omeka S's default natural language mode, this module enforces strict search conditions.
+    - `AND`: Returns only results that contain all specified keywords.
+    - `OR`: Returns results that contain any of the specified keywords.
 
-- Revert to InnoDB, restore FK on `owner_id` when applicable; may dispatch reindex.
-	InnoDB に戻し、`owner_id` の外部キーを可能なら復元。必要に応じて再索引を実行します。
+5.  **Safe Installation and Uninstallation:**
+    - **On Install:** The module checks if Mroonga is active. It then safely alters the table engine. If any issues occur, it attempts to recover gracefully.
+    - **On Uninstall:** The module reverts the `fulltext_search` table back to the standard InnoDB engine, ensuring your Omeka S site remains fully functional without the module.
 
-## Search behavior / 検索仕様
+## Installation
 
-- Multi-term / 複数語:
-	- AND: every token must match / 各トークンが必ずヒット
-	- OR: any token may match / いずれかのトークンがヒット
-- Single-term / 単語: defer to Omeka core’s natural fulltext.
-	単語検索はコアの自然言語モードに委譲します。
-- Fallback when Mroonga is unavailable / Mroonga 非使用時:
-	- CJK: LIKE-based (single-character allowed) / CJK は LIKE（単文字許可）
-	- non-CJK: BOOLEAN MODE with strict AND/OR / 非CJKは BOOLEAN MODE で厳密 AND/OR
-- Avoid double filtering by diverting parameters so only one strict evaluation applies.
-	パラメータの早期ガードにより二重適用を防ぎ、厳密評価を一度だけ適用します。
+1.  Unzip the module and place the `MroongaSearch` folder into your Omeka S `modules` directory.
+2.  Log in to your Omeka S admin dashboard, navigate to the "Modules" section, and activate "MroongaSearch".
 
-UI parameters / UI パラメータ:
-- `fulltext_search` (query) / 検索語
-- `logic` or `fulltext_logic` = `and` | `or`
+**Note:** Activating the module may trigger a search index rebuild job, which can take some time depending on the amount of data.
 
-## Operations / 運用
+No further configuration is required. The module will automatically detect your environment and apply the appropriate search enhancements.
 
-- Reindex job clears the table then refills by 100/page; hit counts rise as it proceeds.
-	再索引ジョブは全削除→100件ページで再投入。開始直後はヒットが少なく、進むにつれ増加します。
-- Incremental updates occur on resource save/delete; full reindex is not required for normal edits.
-	保存/削除時に増分反映。通常編集にフル再索引は不要です。
+## Usage
 
-## Troubleshooting / トラブルシュート
+When performing a full-text search, you can control the search logic by adding a `logic` parameter to the query URL:
 
-- 1191 FULLTEXT error: ensure `FULLTEXT(title, text)` exists (module auto-creates after engine changes).
-	1191: `FULLTEXT(title, text)` の存在を確認（本モジュールが自動作成）。
-- Mroonga not ACTIVE: install/enable plugin; the module refuses installation otherwise.
-	Mroonga 未有効: プラグイン導入/有効化が必要。未満だとインストールを拒否します。
-- OR behaves like AND: upgrade to this enhanced version; double filtering is fixed.
-	OR が AND のようになる: 本改良版へ更新。二重適用を解消済みです。
+-   **AND Search:** `?fulltext_search=keyword1+keyword2&logic=and`
+-   **OR Search:** `?fulltext_search=keyword1+keyword2&logic=or`
 
-## Integration notes / 連携
-
-No public tokenization API; rely on DB features and keep fallbacks (e.g., IiifSearchCarousel).
-公開トークナイズ API は提供しません。DB 機能検出＋フォールバックでの実装を推奨します。
-
-DB hint: `information_schema.TABLES.TABLE_COMMENT` may include `tokenizer "TokenMecab"`. Don’t hard-depend.
-DB ヒント: `TABLE_COMMENT` に `tokenizer "TokenMecab"` が含まれる場合がありますが、過度依存は非推奨です。
-
-## Credits / クレジット
-
-- Original: Kentaro Fukuchi — https://github.com/fukuchi/Omeka-S-module-mroonga-search (MIT)
-- First modification: Kazufumi Fukuda — https://github.com/fukudakz/Omeka-S-module-mroonga-search/
-- Enhancement: Toshihito Waki — https://github.com/wakitosh/MroongaSearch
-
-## License / ライセンス
-
-MIT License (same as original) / オリジナル同様 MIT ライセンス。`LICENSE` を参照。
-
-# Mroonga Search for Omeka S (Enhanced)
-
-
-この版は Omeka S 4.x 向けに、環境検証や安全なインストール/アンインストール、CJK 向け検索の厳密 AND/OR、フォールバック強化を行った改良版です。
-
-## What this module does / 概要
-
-- Switch `fulltext_search` to Mroonga engine for CJK-ready full-text.
-- If available, enable MeCab tokenizer (TokenMecab) automatically; otherwise, fall back safely.
-- Provide strict AND/OR semantics for multi-term queries (UI: `logic=and|or` or `fulltext_logic=...`).
-- Guarantee the `FULLTEXT(title, text)` index after engine switch or table recreate.
-- Revert to InnoDB on uninstall (with best-effort FK restore), leaving the site usable without Mroonga.
-
-## Requirements / 要件
-
-- MariaDB 10.5+ or MySQL compatible with Mroonga
-- Mroonga plugin installed and ACTIVE
-- Optional: `groonga-tokenizer-mecab` for MeCab (TokenMecab)
-
-Before enabling the module, back up your database. This module changes table engine and may rebuild index content.
-
-## Install / インストール
-
-1) Ensure Mroonga is installed and ACTIVE. On Debian/Ubuntu with MariaDB, install `mariadb-plugin-mroonga`.
-2) (Optional) Install MeCab tokenizer: `groonga-tokenizer-mecab`.
-3) Put this module under `modules/MroongaSearch`, then enable it in Omeka S admin.
-
-What happens on enable:
-- The module checks that Mroonga plugin is ACTIVE.
-- It tries `ALTER TABLE fulltext_search ENGINE=Mroonga COMMENT='table "ms_fulltext" tokenizer "TokenMecab"'` when TokenMecab is available (falls back to default tokenizer when not).
-- If ALTER fails (e.g., orphan Groonga objects), it drops/recreates the table with Mroonga engine and dispatches Omeka’s `IndexFulltextSearch` job to rebuild content.
-- It ensures a `FULLTEXT(title, text)` index exists (creates it if missing) to avoid 1191 errors.
-
-## Uninstall / アンインストール
-
-On uninstall, the module tries to revert `fulltext_search` back to InnoDB and restore the foreign key on `owner_id` when applicable. If the revert requires a rebuild, it will dispatch the `IndexFulltextSearch` job.
-
-## Search behavior / 検索仕様
-
-- Multi-term queries:
-	- AND: every token must match (strict intersection)
-	- OR: any token may match (strict union)
-- Single-term queries: defer to Omeka core’s behavior for natural fulltext matching.
-- Fallback when Mroonga is not available:
-	- CJK terms: LIKE-based matching (includes single-character allowance)
-	- non-CJK: BOOLEAN MODE with strict AND/OR
-- The module avoids double filtering by diverting parameters internally so only one strict evaluation path applies.
-
-UI parameters accepted:
-- `fulltext_search` (query string)
-- `logic` or `fulltext_logic` = `and` | `or`
-
-## Operations / 運用メモ
-
-- Reindex job: Omeka’s `IndexFulltextSearch` clears `fulltext_search` and refills in pages of 100. Immediately after starting, hit counts are low and increase as the job progresses.
-- Incremental updates: On resource save/delete, Omeka updates `fulltext_search` automatically; full reindex is not required for regular edits.
-
-## Troubleshooting / トラブルシュート
-
-- SQLSTATE[HY000] 1191 (FULLTEXT index required): Ensure `FULLTEXT(title, text)` exists; this module auto-creates it after engine changes.
-- Mroonga plugin not ACTIVE: The module will refuse to install; install/enable the plugin and try again.
-- OR behaving like AND (few results): Ensure you are on this enhanced version; the module prevents core’s natural-mode double application and applies strict OR correctly.
-
-## Integration notes / 連携メモ
-
-This module doesn’t export a public tokenization API. Feature-detect at DB level if needed, and always keep a fallback path in dependent modules (e.g., IiifSearchCarousel).
-
-DB-level TokenMecab hint: `information_schema.TABLES.TABLE_COMMENT` may contain `tokenizer "TokenMecab"`. Don’t rely on this alone; always implement fallbacks.
-
-## Credits / クレジット
-
-- Original: Kentaro Fukuchi — https://github.com/fukuchi/Omeka-S-module-mroonga-search (MIT)
-- First modification: Kazufumi Fukuda — https://github.com/fukudakz/Omeka-S-module-mroonga-search/
-- Enhancement: Toshihito Waki — https://github.com/wakitosh/MroongaSearch
+If the `logic` parameter is omitted, it typically defaults to `AND`.
 
 ## License
 
-MIT License (same as original). See `LICENSE`.
+This module is licensed under the MIT License.
+
+---
+
+# MroongaSearch for Omeka S (日本語)
+
+このモジュールは、Omeka Sの日本語全文検索機能を改善します。サーバー環境に応じて2つのモードで動作し、検索機能を強化します。
+
+主な特長として、**Mroongaストレージエンジンがインストールされていない標準的なOmeka S環境でも、実用的な日本語全文検索を可能にします**。データベースの標準機能を用いることで、Omeka Sのデフォルトでは実現が難しい厳密な`AND`/`OR`検索を提供します。
+
+Mroongaエンジンが利用可能な環境では、モジュールは自動的にMroongaを利用し、さらに高速な全文検索を実現します。
+
+## モジュールの来歴
+
+-   **オリジナル版:** [Kentaro Fukuchi](https://github.com/fukuchi/Omeka-S-module-mroonga-search)
+-   **改訂版:** [Kazufumi Fukuda](https://github.com/fukudakz/Omeka-S-module-mroonga-search/)
+-   **機能強化版:** [Toshihito Waki](https://github.com/wakitosh/MroongaSearch)
+
+このバージョンは、フォールバック機能の強化、安全なインストール／アンインストール処理、検索ロジックの改善など、大幅な機能強化が施されています。
+
+## 主な機能
+
+1.  **日本語全文検索の強化 (Mroongaなし環境):**
+    -   標準のデータベースエンジン（InnoDB）では、Omeka Sのデフォルト全文検索は日本語でうまく機能しません。このモジュールは、その代替として、CJK（日中韓）言語に`LIKE`検索を利用することで擬似的に全文検索が利用できるようにします。
+
+2.  **Mroongaによる高速検索 (Mroongaあり環境):**
+    -   データベースでMroongaプラグインが有効な場合、モジュールは自動的に`fulltext_search`テーブルのエンジンをMroongaに切り替えます。
+    -   これにより、CJK言語に対応した高速な全文検索が実現します。
+
+3.  **MeCab連携による高精度な検索（オプション）:**
+    -   `groonga-tokenizer-mecab`が利用可能な環境では、MeCabをトークナイザとして利用し、より高精度な日本語検索を実現します。
+    -   形態素解析によって日本語の単語の区切りを正確に認識できるようになります。
+    -   MeCabが利用できない場合、モジュールは自動的にMroonga標準のトークナイザを使用します。
+
+4.  **厳密な `AND` / `OR` 検索:**
+    -   Omeka Sのデフォルトである自然言語検索とは異なり、このモジュールは厳密な検索条件を適用します。
+    -   `AND`検索: 指定したすべてのキーワードを含む資料のみを返します。
+    -   `OR`検索: 指定したキーワードのいずれかを含む資料を返します。
+
+5.  **安全なインストールとアンインストール:**
+    -   **インストール時:** Mroongaが有効かを確認し、安全にテーブルエンジンを変更します。問題が発生した場合は、正常な状態を維持しようと試みます。
+    -   **アンインストール時:** `fulltext_search`テーブルを標準のInnoDBエンジンに戻します。これにより、モジュールを無効にしてもサイトが問題なく機能し続けます。
+
+## インストール
+
+1.  モジュールを解凍し、`MroongaSearch`フォルダをOmeka Sの`modules`ディレクトリに配置します。
+2.  Omeka Sの管理画面にログインし、「モジュール」セクションで「MroongaSearch」を有効化します。
+
+**注意:** モジュールを有効化すると、検索インデックスの再構築ジョブが実行される場合があります。データ量によっては完了まで時間がかかることがあります。
+
+これ以上の設定は不要です。モジュールが自動的に環境を検出し、適切な検索強化を適用します。
+
+## 利用方法
+
+全文検索の際、URLに`logic`パラメータを追加することで、検索ロジックを制御できます。
+
+-   **AND検索:** `?fulltext_search=キーワード1+キーワード2&logic=and`
+-   **OR検索:** `?fulltext_search=キーワード1+キーワード2&logic=or`
+
+`logic`パラメータを省略した場合、通常は`AND`検索として扱われます。
+
+## ライセンス
+
+このモジュールはMITライセンスの下で公開されています。
+
+
