@@ -39,8 +39,18 @@ This version has been significantly enhanced to provide robust fallback mechanis
 
 ## Installation
 
-1.  Unzip the module and place the `MroongaSearch` folder into your Omeka S `modules` directory.
-2.  Log in to your Omeka S admin dashboard, navigate to the "Modules" section, and activate "MroongaSearch".
+While this module works without Mroonga, installing it is recommended for better performance.
+
+1.  **Install Mroonga (Recommended):**
+    - For high-speed, CJK-aware full-text search, install the Mroonga storage engine in your database.
+    - See the official Mroonga website for instructions: [https://mroonga.org/](https://mroonga.org/)
+
+2.  **Install MeCab Tokenizer (Optional but Recommended):**
+    - For even more accurate Japanese morphological analysis, installing `groonga-tokenizer-mecab` is recommended.
+
+3.  **Install the Module:**
+    - Unzip the module and place the `MroongaSearch` folder into your Omeka S `modules` directory.
+    - Log in to your Omeka S admin dashboard, navigate to the "Modules" section, and activate "MroongaSearch".
 
 **Note:** Activating the module may trigger a search index rebuild job, which can take some time depending on the amount of data.
 
@@ -102,8 +112,18 @@ Mroongaエンジンが利用可能な環境では、モジュールは自動的�
 
 ## インストール
 
-1.  モジュールを解凍し、`MroongaSearch`フォルダをOmeka Sの`modules`ディレクトリに配置します。
-2.  Omeka Sの管理画面にログインし、「モジュール」セクションで「MroongaSearch」を有効化します。
+このモジュールはMroongaなしでも動作しますが、より高いパフォーマンスを得るためにMroongaのインストールを推奨します。
+
+1.  **Mroongaのインストール（推奨）:**
+    -   CJK言語対応の高速な全文検索を利用するために、データベースにMroongaストレージエンジンをインストールしてください。
+    -   導入手順については公式サイトを参照してください: [https://mroonga.org/](https://mroonga.org/)
+
+2.  **MeCabトークナイザのインストール（オプション、推奨）:**
+    -   より高精度な日本語の形態素解析のため、`groonga-tokenizer-mecab`のインストールを推奨します。
+
+3.  **本モジュールのインストール:**
+    -   モジュールを解凍し、`MroongaSearch`フォルダをOmeka Sの`modules`ディレクトリに配置します。
+    -   Omeka Sの管理画面にログインし、「モジュール」セクションで「MroongaSearch」を有効化します。
 
 **注意:** モジュールを有効化すると、検索インデックスの再構築ジョブが実行される場合があります。データ量によっては完了まで時間がかかることがあります。
 
