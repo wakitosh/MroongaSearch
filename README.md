@@ -17,7 +17,7 @@ This version has been significantly enhanced to provide robust fallback mechanis
 ## Key Features
 
 1.  **Enhanced Japanese Full-Text Search (without Mroonga):**
-    - On a standard database engine (InnoDB), Omeka S's default full-text search does not work well for Japanese. This module provides an alternative that enables a pseudo-full-text search by using `LIKE` for CJK (Chinese, Japanese, Korean) languages.
+    - Omeka S's default full-text search does not work well for Japanese. This module provides an alternative that enables a pseudo-full-text search by using `LIKE` for CJK (Chinese, Japanese, Korean) languages.
 
 2.  **Mroonga-Powered Search (with Mroonga):**
     - If the Mroonga plugin is active in your database, the module will automatically alter the `fulltext_search` table to use the Mroonga engine.
@@ -80,7 +80,7 @@ Mroongaエンジンが利用可能な環境では、モジュールは自動的�
 ## 主な機能
 
 1.  **日本語全文検索の強化 (Mroongaなし環境):**
-    -   標準のデータベースエンジン（InnoDB）では、Omeka Sのデフォルト全文検索は日本語でうまく機能しません。このモジュールは、その代替として、CJK（日中韓）言語に`LIKE`検索を利用することで擬似的に全文検索が利用できるようにします。
+    -   Omeka Sのデフォルト全文検索は日本語でうまく機能しません。このモジュールは、CJK（日中韓）言語に`LIKE`検索を利用することで擬似的に全文検索が利用できるようにします。
 
 2.  **Mroongaによる高速検索 (Mroongaあり環境):**
     -   データベースでMroongaプラグインが有効な場合、モジュールは自動的に`fulltext_search`テーブルのエンジンをMroongaに切り替えます。
