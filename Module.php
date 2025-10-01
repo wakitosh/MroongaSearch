@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace MroongaSearch;
 
 use Doctrine\DBAL\Connection;
+use Laminas\EventManager\SharedEventManagerInterface;
 use Laminas\Mvc\MvcEvent;
 use Laminas\ServiceManager\ServiceLocatorInterface;
+use Omeka\Form\SettingForm;
 use Omeka\Module\AbstractModule;
 use Omeka\Module\Exception\ModuleCannotInstallException;
 use Omeka\Stdlib\Message;
@@ -20,6 +22,19 @@ use Omeka\Stdlib\Message;
  * - On uninstall: switches back to InnoDB and restores FK if missing.
  */
 class Module extends AbstractModule {
+
+  /**
+   * PSR-4 style autoloader configuration for this module.
+   */
+  public function getAutoloaderConfig(): array {
+    return [
+      'Laminas\\Loader\\StandardAutoloader' => [
+        'namespaces' => [
+          __NAMESPACE__ => __DIR__ . '/src',
+        ],
+      ],
+    ];
+  }
 
   /**
    * Attach strict full-text tweaks after core has built its query.
@@ -104,9 +119,11 @@ class Module extends AbstractModule {
             return;
           }
           $tokens = $self->tokenizeFulltext($full);
-          $mroongaActive = $self->isMroongaActive($conn);
+          // Treat Mroonga as "effective" only when plugin is ACTIVE and
+          // the fulltext_search table engine is actually Mroonga.
+          $mroongaEffective = $self->isMroongaEffective($conn);
           $shouldDivert = FALSE;
-          if ($mroongaActive) {
+          if ($mroongaEffective) {
             // Mroonga が有効でトークン数が2以上なら、strict AND/OR は当モジュールが担当.
             $shouldDivert = count($tokens) >= 2;
           }
@@ -140,7 +157,7 @@ class Module extends AbstractModule {
       try {
         // Skip if Mroonga is not active to avoid touching fulltext_search.
         $conn = $services->get('Omeka\\Connection');
-        if (!$self->isMroongaActive($conn)) {
+        if (!$self->isMroongaEffective($conn)) {
           return;
         }
         $adapter = $ev->getTarget();
@@ -178,11 +195,14 @@ class Module extends AbstractModule {
 
         // Join fulltext table and require presence per-token.
         $alias = $adapter->createAlias();
+        // Compare resource column with the API resource name (e.g., 'items'),
+        // because fulltext_search.resource stores API names by default.
+        $resourceName = $adapter->getResourceName();
         $joinConditions = sprintf(
           '%s.id = omeka_root.id AND %s.resource = %s',
           $alias,
           $alias,
-          $adapter->createNamedParameter($qb, $adapter->getResourceName())
+          $adapter->createNamedParameter($qb, $resourceName)
         );
         $qb->innerJoin('Omeka\\Entity\\FulltextSearch', $alias, 'WITH', $joinConditions);
 
@@ -213,7 +233,9 @@ class Module extends AbstractModule {
     $shared->attach('*', 'api.search.query', function ($ev) use ($services, $self) {
       try {
         $conn = $services->get('Omeka\\Connection');
-        if ($self->isMroongaActive($conn)) {
+        // When Mroonga is effectively available (plugin+engine), let the
+        // Mroonga-specific listener above handle strict logic.
+        if ($self->isMroongaEffective($conn)) {
           // Mroonga listener above will handle strict logic.
           return;
         }
@@ -260,11 +282,14 @@ class Module extends AbstractModule {
 
         // Join a separate alias to apply constraints per-token.
         $alias = $adapter->createAlias();
+        // Compare resource column with the API resource name (e.g., 'items'),
+        // because fulltext_search.resource stores API names by default.
+        $resourceName = $adapter->getResourceName();
         $joinConditions = sprintf(
           '%s.id = omeka_root.id AND %s.resource = %s',
           $alias,
           $alias,
-          $adapter->createNamedParameter($qb, $adapter->getResourceName())
+          $adapter->createNamedParameter($qb, $resourceName)
         );
         $qb->innerJoin('Omeka\\Entity\\FulltextSearch', $alias, 'WITH', $joinConditions);
 
@@ -295,6 +320,41 @@ class Module extends AbstractModule {
   }
 
   /**
+   * Attach listeners to extend admin SettingForm with a warning.
+   */
+  public function attachListeners(SharedEventManagerInterface $sharedEventManager): void {
+    // Add an informational warning next to the core "Index full-text search"
+    // checkbox to prevent accidental full reindex on production.
+    $sharedEventManager->attach(
+      SettingForm::class,
+      'form.add_elements',
+      function ($event) {
+        try {
+          $form = $event->getTarget();
+          if (!method_exists($form, 'has') || !method_exists($form, 'get')) {
+            return;
+          }
+          if (!$form->has('index_fulltext_search')) {
+            return;
+          }
+          $element = $form->get('index_fulltext_search');
+          $opts = $element->getOptions() ?: [];
+          // Bilingual caution message (JA/EN).
+          $opts['info'] =
+            '推奨: この全量再インデックスは実行中に検索結果が不安定になります。管理メニューの「Mroonga: Reindex items only / items + item sets / media only」を順に使って段階的に再構築してください。' .
+            ' / Caution: Full reindex will temporarily disrupt search results. Prefer the segmented admin jobs: Mroonga: Reindex items only / items + item sets / media only.';
+          $element->setOptions($opts);
+        }
+        catch (\Throwable $e) {
+          // Best-effort only: ignore if form structure changes.
+        }
+      },
+      // Priority: run late so core and other modules add their elements first.
+      -100
+    );
+  }
+
+  /**
    * Best-effort detection of Mroonga plugin availability.
    */
   protected function isMroongaActive(Connection $connection): bool {
@@ -304,6 +364,30 @@ class Module extends AbstractModule {
         ? $connection->fetchOne($sql)
         : $connection->fetchColumn($sql);
       return $result === 'ACTIVE';
+    }
+    catch (\Throwable $e) {
+      return FALSE;
+    }
+  }
+
+  /**
+   * Determine if Mroonga is effectively usable for searches.
+   *
+   * This requires both:
+   * - The Mroonga plugin is ACTIVE, and
+   * - The fulltext_search table engine is Mroonga.
+   *
+   * When only the plugin is active but the table remains InnoDB, we should
+   * not consider Mroonga effectively available and must use the fallback
+   * logic (e.g., CJK LIKE for single-term queries).
+   */
+  protected function isMroongaEffective(Connection $connection): bool {
+    try {
+      if (!$this->isMroongaActive($connection)) {
+        return FALSE;
+      }
+      $engine = (string) $this->getTableEngine($connection, 'fulltext_search');
+      return strcasecmp($engine, 'Mroonga') === 0;
     }
     catch (\Throwable $e) {
       return FALSE;

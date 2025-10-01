@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.2.0] - 2025-10-02
+
+### Added
+- Admin Diagnostics page consolidating engine status (plugin/engine/comment/tokenizer), FULLTEXT indexes, indexed vs actual counts, and recent jobs.
+- Manual engine switching buttons (to Mroonga / back to InnoDB) with safe FK handling and FULLTEXT(title,text) ensure.
+- Segmented reindex jobs (Items only / Items + Item sets / Media only) with per-page progress logs.
+- Recent jobs table with Open and Log links; DateTime rendered with site timezone.
+- Run buttons show dynamic confirmations based on target row counts (strong warnings for large volumes).
+
+### Changed
+- Search listeners now use the “effective Mroonga” concept (plugin ACTIVE + table ENGINE=Mroonga) to decide behavior.
+- Admin menu consolidated to a single “Mroonga Search” item that leads to Diagnostics; engine switching duplicated button removed from Overview.
+- Tablesaw-based table styling for better responsive behavior; class cell wrapping to avoid overlaps.
+
+### Fixed
+- Diagnostics template errors (template path, closure lexical $this, transaction-related issues in tokenizer probe) resolved.
+- Job detail links fixed to use the correct route (admin/id) to avoid 404 for valid job IDs; hide link when ID is missing.
+- Prevent buttons from overflowing table cells; align Open/Log horizontally.
+
+### Notes
+- Default behavior differences are intentional: single-term CJK under non-effective Mroonga uses LIKE (wider recall), while effective Mroonga uses token-based matching (higher precision).
+
 ## [4.1.0] - 2025-09-29
 
 ### Added

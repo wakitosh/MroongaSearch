@@ -1,0 +1,232 @@
+<?php
+/** @var \Laminas\View\Renderer\PhpRenderer $this */
+$__ = function(string $s, string $domain = 'mroonga-search') { return $this->plugin('translate')->__invoke($s, $domain); };
+$this->htmlElement('body')->appendAttribute('class', 'media search');
+$this->headLink()->prependStylesheet($this->assetUrl('vendor/tablesaw/tablesaw.stackonly.css', 'Omeka'));
+$this->headScript()->prependFile($this->assetUrl('vendor/tablesaw/tablesaw.stackonly.jquery.js', 'Omeka'), 'text/javascript', ['defer' => 'defer']);
+$pluginActive = (bool) ($this->pluginActive ?? false);
+$effective = (bool) ($this->effective ?? false);
+$engine = (string) ($this->engine ?? '');
+$comment = (string) ($this->comment ?? '');
+$tokenMecab = (bool) ($this->tokenMecab ?? false);
+$indexes = is_array($this->fulltextIndexes ?? null) ? $this->fulltextIndexes : [];
+$counts = is_array($this->counts ?? null) ? $this->counts : [];
+$totals = is_array($this->totals ?? null) ? $this->totals : [];
+// Format DateTimeInterface safely for display (apply global timezone if provided).
+$fmtDate = function($v): string {
+  if ($v instanceof \DateTimeInterface) {
+    $tzId = (string) ($this->timezone ?? '');
+    if ($tzId) {
+      try {
+        if ($v instanceof \DateTimeImmutable) {
+          $v = $v->setTimezone(new \DateTimeZone($tzId));
+        } elseif ($v instanceof \DateTime) {
+          $v->setTimezone(new \DateTimeZone($tzId));
+        }
+      } catch (\Throwable $e) {}
+    }
+    return $v->format('Y-m-d H:i:s');
+  }
+  if ($v === null) return '';
+  return (string) $v;
+};
+?>
+<div class="mroonga-diagnostics">
+  <?= $this->pageTitle('Mroonga Search Diagnostics'); ?>
+  <p><?= $this->escapeHtml($__('- Status overview (JA/EN below)', 'mroonga-search')); ?></p>
+
+  <style>
+    .mrd-grid { display: grid; grid-template-columns: 220px 1fr; gap: 6px 12px; max-width: 860px; }
+    .mrd-key { font-weight: 600; color: #333; }
+    .mrd-val code { background: #f6f8fa; padding: 1px 4px; border-radius: 3px; }
+    .mrd-ok { color: #0a7f2e; font-weight: 600; }
+    .mrd-warn { color: #b33; font-weight: 600; }
+    .mrd-sec { margin: 1.5em 0; }
+  .mrd-table { border-collapse: collapse; width: 100%; max-width: 860px; table-layout: fixed; }
+  .mrd-table th, .mrd-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .mrd-col-id { width: 72px; }
+  .mrd-col-class { width: 38%; white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+  .mrd-col-class code { white-space: normal; word-break: break-all; overflow-wrap: anywhere; display: block; }
+  .mrd-col-status { width: 120px; }
+  .mrd-col-start, .mrd-col-end { width: 170px; }
+  .mrd-col-actions { width: 160px; }
+  .mrd-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .mrd-actions .button { margin: 0; }
+    .mrd-note { color: #555; font-size: .95em; }
+  </style>
+
+  <div class="mrd-sec">
+    <h3>Overview</h3>
+    <div class="mrd-grid">
+      <div class="mrd-key">Plugin status</div>
+      <div class="mrd-val"><?= $pluginActive ? '<span class="mrd-ok">ACTIVE</span>' : '<span class="mrd-warn">INACTIVE</span>'; ?></div>
+
+      <div class="mrd-key">Table engine (fulltext_search)</div>
+      <div class="mrd-val"><code><?= $this->escapeHtml($engine ?: '(unknown)'); ?></code></div>
+
+      <div class="mrd-key">Engine comment</div>
+      <div class="mrd-val"><code><?= $this->escapeHtml($comment ?: '(empty)'); ?></code></div>
+
+      <div class="mrd-key">TokenMecab available</div>
+      <div class="mrd-val"><?= $tokenMecab ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?></div>
+
+      <div class="mrd-key">Mroonga effective (plugin+engine)</div>
+      <div class="mrd-val"><?= $effective ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?></div>
+    </div>
+    <p class="mrd-note">
+      - If <strong>Mroonga effective</strong> is NO, fallback search is used (CJK LIKE for single terms, BOOLEAN for others).<br>
+      - To enable Mroonga fully, switch <code>fulltext_search</code> to ENGINE=Mroonga (with optional <code>tokenizer "TokenMecab"</code>) and reindex.
+    </p>
+    <?php /* Switch buttons are consolidated into the Indexing (manual) section below. */ ?>
+  </div>
+
+  <div class="mrd-sec">
+    <h3>FULLTEXT indexes</h3>
+    <?php if ($indexes): ?>
+      <table class="mrd-table tablesaw tablesaw-stack" data-tablesaw-mode="stack">
+        <thead><tr><th>Name</th><th>Type</th><th>Columns</th></tr></thead>
+        <tbody>
+          <?php foreach ($indexes as $ix): ?>
+            <tr>
+              <td><?= $this->escapeHtml((string)($ix['name'] ?? '')); ?></td>
+              <td><?= $this->escapeHtml((string)($ix['type'] ?? '')); ?></td>
+              <td><?= $this->escapeHtml((string)($ix['cols'] ?? '')); ?></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php else: ?>
+      <p>(No index info found)</p>
+    <?php endif; ?>
+  </div>
+
+  <div class="mrd-sec">
+    <h3>Resource counts in fulltext_search</h3>
+    <div class="mrd-grid">
+      <div class="mrd-key">items</div>
+      <div class="mrd-val"><?= isset($counts['items']) ? (int)$counts['items'] : '-'; ?></div>
+      <div class="mrd-key">item_sets</div>
+      <div class="mrd-val"><?= isset($counts['item_sets']) ? (int)$counts['item_sets'] : '-'; ?></div>
+      <div class="mrd-key">media</div>
+      <div class="mrd-val"><?= isset($counts['media']) ? (int)$counts['media'] : '-'; ?></div>
+    </div>
+  </div>
+
+  <div class="mrd-sec">
+    <h3>Actual totals (database)</h3>
+    <div class="mrd-grid">
+      <div class="mrd-key">items</div>
+      <div class="mrd-val"><?= isset($totals['items']) ? (int)$totals['items'] : '-'; ?></div>
+      <div class="mrd-key">item_sets</div>
+      <div class="mrd-val"><?= isset($totals['item_sets']) ? (int)$totals['item_sets'] : '-'; ?></div>
+      <div class="mrd-key">media</div>
+      <div class="mrd-val"><?= isset($totals['media']) ? (int)$totals['media'] : '-'; ?></div>
+    </div>
+    <p class="mrd-note">These totals come from core tables (<code>item</code>, <code>item_set</code>, <code>media</code>). Use this to compare with indexed counts above.</p>
+  </div>
+
+  <div class="mrd-sec">
+    <h3>Recent jobs</h3>
+    <?php $jobs = is_array($this->jobs ?? null) ? $this->jobs : []; ?>
+    <?php if ($jobs): ?>
+      <table class="mrd-table tablesaw tablesaw-stack" data-tablesaw-mode="stack">
+        <thead><tr><th class="mrd-col-id">ID</th><th class="mrd-col-class">Class</th><th class="mrd-col-status">Status</th><th class="mrd-col-start">Started</th><th class="mrd-col-end">Ended</th><th class="mrd-col-actions"></th></tr></thead>
+        <tbody>
+        <?php foreach ($jobs as $j): $jid = (int)($j['id'] ?? 0); ?>
+          <tr>
+            <td class="mrd-col-id"><?= $jid; ?></td>
+            <td class="mrd-col-class"><code><?= $this->escapeHtml((string)($j['class'] ?? '')); ?></code></td>
+            <td class="mrd-col-status"><?= $this->escapeHtml((string)($j['status'] ?? '')); ?></td>
+            <td class="mrd-col-start"><?= $this->escapeHtml($fmtDate($j['started'] ?? null)); ?></td>
+            <td class="mrd-col-end"><?= $this->escapeHtml($fmtDate($j['ended'] ?? null)); ?></td>
+            <td class="mrd-col-actions">
+              <?php if ($jid > 0): ?>
+                <?php
+                  $jobUrl = $this->url('admin/id', ['controller' => 'job', 'action' => 'show', 'id' => $jid]);
+                  $logUrl = $this->url('admin/id', ['controller' => 'job', 'action' => 'log', 'id' => $jid]);
+                ?>
+                <div class="mrd-actions">
+                  <a class="button" href="<?= $this->escapeHtml($jobUrl); ?>">Open</a>
+                  <a class="button" href="<?= $this->escapeHtml($logUrl); ?>">Log</a>
+                </div>
+              <?php else: ?>
+                -
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php else: ?>
+      <p>(No recent jobs)</p>
+    <?php endif; ?>
+  </div>
+
+  <div class="mrd-sec">
+    <h3>Indexing (manual)</h3>
+    <p class="mrd-note">Choose what to (re)index. Jobs append progress to each job’s log.</p>
+    <?php
+      // Show switch buttons depending on engine status.
+      $canSwitchToMroonga = $pluginActive && (!$engine || strcasecmp($engine, 'Mroonga') !== 0);
+      $canSwitchToInnoDB = ($engine && strcasecmp($engine, 'Mroonga') === 0);
+      $switchUrl = $this->url('admin/mroonga-switch-engine');
+      $switchInnoUrl = $this->url('admin/mroonga-switch-innodb');
+      // Reindex job URLs
+      $reItemsUrl = $this->url('admin/mroonga-reindex-items');
+      $reItemsSetsUrl = $this->url('admin/mroonga-reindex-items-sets');
+      $reMediaUrl = $this->url('admin/mroonga-reindex-media');
+    ?>
+    <script>
+      (function(){
+        function warnRun(kind, count) {
+          var base = 'Run reindex for ' + kind + ' (' + (count != null ? count : '?') + ' rows).\n\n';
+          var note = 'This may take a long time and increase DB load. Proceed?';
+          if (typeof count === 'number' && count >= 50000) {
+            note = 'WARNING: Large scale reindex (' + count + ' rows). It may lock resources and take a long time. Proceed?';
+          } else if (typeof count === 'number' && count >= 10000) {
+            note = 'Caution: Large reindex (' + count + ' rows). It may take time. Proceed?';
+          }
+          return window.confirm(base + note);
+        }
+        window.__mrdConfirm = warnRun;
+      })();
+    </script>
+    <div class="mrd-grid">
+      <?php if ($canSwitchToMroonga): ?>
+        <div class="mrd-key">Switch to Mroonga</div>
+        <div class="mrd-val">
+          <a class="button" href="<?= $this->escapeHtml($switchUrl); ?>" onclick="return confirm('Switch fulltext_search to ENGINE=Mroonga. この操作はDDLを伴い、短時間ロックが発生します。実行しますか？');">Switch to Mroonga</a>
+        </div>
+      <?php endif; ?>
+      <?php if ($canSwitchToInnoDB): ?>
+        <div class="mrd-key">Switch to InnoDB (fallback)</div>
+        <div class="mrd-val">
+          <div class="mrd-note" style="margin-bottom:6px;color:#b33;">Warning: InnoDBに戻すとMroongaの高品質なCJKトークン化は無効になり、フォールバック検索に切り替わります。必要に応じてDiagnostics下部の手動インデックスを再実行してください。</div>
+          <a class="button" href="<?= $this->escapeHtml($switchInnoUrl); ?>" onclick="return confirm('Switch fulltext_search to ENGINE=InnoDB (fallback). この操作はDDLを伴い、短時間ロックが発生します。実行しますか？');">Switch to InnoDB</a>
+        </div>
+      <?php endif; ?>
+      <div class="mrd-key">Reindex: Items only</div>
+      <div class="mrd-val">
+        <?php $itemCount = isset($counts['items']) ? (int)$counts['items'] : (isset($totals['items']) ? (int)$totals['items'] : null); ?>
+        <a class="button" href="<?= $this->escapeHtml($reItemsUrl); ?>" onclick="return window.__mrdConfirm('items', <?= $itemCount !== null ? (int)$itemCount : 'null' ?>);">Run</a>
+      </div>
+      <div class="mrd-key">Reindex: Items + Item sets</div>
+      <div class="mrd-val">
+        <?php $isCount = (isset($counts['items']) ? (int)$counts['items'] : 0) + (isset($counts['item_sets']) ? (int)$counts['item_sets'] : 0); if (!$isCount) { $isCount = (isset($totals['items']) ? (int)$totals['items'] : 0) + (isset($totals['item_sets']) ? (int)$totals['item_sets'] : 0); } ?>
+        <a class="button" href="<?= $this->escapeHtml($reItemsSetsUrl); ?>" onclick="return window.__mrdConfirm('items + item sets', <?= (int)$isCount ?>);">Run</a>
+      </div>
+      <div class="mrd-key">Reindex: Media only</div>
+      <div class="mrd-val">
+        <?php $mediaCount = isset($counts['media']) ? (int)$counts['media'] : (isset($totals['media']) ? (int)$totals['media'] : null); ?>
+        <a class="button" href="<?= $this->escapeHtml($reMediaUrl); ?>" onclick="return window.__mrdConfirm('media', <?= $mediaCount !== null ? (int)$mediaCount : 'null' ?>);">Run</a>
+      </div>
+    </div>
+  </div>
+  <div class="mrd-sec">
+    <h3>JA/EN Notes</h3>
+    <p>
+      <strong>JP:</strong> プラグインACTIVE/ACTIVEとテーブルエンジン、トークナイザ(TokenMecab)の状況を表示します。プラグインがACTIVEでもテーブルエンジンがInnoDBのままの場合、「Mroonga effective」はNOとなり、単語1件のCJK検索はLIKEフォールバックで実行されます。Mroongaを有効にしたい場合は、ENGINEをMroongaに変更（可能ならtokenizer "TokenMecab" を付与）し、再インデックスしてください。<br>
+      <strong>EN:</strong> This page shows plugin status, table engine, tokenizer availability, and index info. When the plugin is ACTIVE but the table engine is still InnoDB, "Mroonga effective" is NO and fallback search is used. To enable Mroonga, switch the table engine to Mroonga (optionally with tokenizer "TokenMecab") and reindex.
+    </p>
+  </div>
+</div>

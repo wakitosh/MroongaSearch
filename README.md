@@ -1,10 +1,6 @@
 # MroongaSearch for Omeka S
 
-This module dramatically improves Japanese full-text search capabilities in Omeka S. It operates in two modes, depending on your server environment, ensuring enhanced search functionality is always available.
-
-First and foremost, **this module enables meaningful Japanese full-text search even on a standard Omeka S installation without the Mroonga storage engine.** It intelligently uses the database's built-in features to provide strict `AND`/`OR` search logic, a feature missing in the default Omeka S setup for CJK languages.
-
-If the Mroonga engine is installed and active, the module automatically upgrades the search functionality to use it, providing even faster and more powerful full-text search.
+Enhanced, CJK-aware full-text search for Omeka S with safe fallbacks, manual engine switching, and an admin Diagnostics page. Works with or without the Mroonga storage engine; optionally uses MeCab for best Japanese tokenization.
 
 ## Module History
 
@@ -16,54 +12,47 @@ This version has been significantly enhanced to provide robust fallback mechanis
 
 ## Key Features
 
-1.  **Enhanced Japanese Full-Text Search (without Mroonga):**
-    - Omeka S's default full-text search does not work well for Japanese. This module provides an alternative that enables a pseudo-full-text search by using `LIKE` for CJK (Chinese, Japanese, Korean) languages.
+1.  Enhanced Japanese Full-Text Search (no Mroonga required)
+    - Provides meaningful CJK search on vanilla Omeka S using smart fallbacks (LIKE for single-term CJK, strict BOOLEAN for others).
+    - Enforces strict AND/OR logic consistently.
 
-2.  **Mroonga-Powered Search (with Mroonga):**
-    - If the Mroonga plugin is active in your database, the module will automatically alter the `fulltext_search` table to use the Mroonga engine.
-    - This provides high-speed, CJK-aware full-text search.
+2.  Mroonga-Powered Search (when available)
+    - If Mroonga is ACTIVE and `fulltext_search` is ENGINE=Mroonga ("effective Mroonga"), uses token-based matching; optionally MeCab for best accuracy.
+    - Falls back automatically when not effective.
 
-3.  **MeCab Tokenizer Support (Optional):**
-    - For even more accurate Japanese searches, the module supports `groonga-tokenizer-mecab`.
-    - Using MeCab for morphological analysis allows the search to correctly understand word boundaries in Japanese text.
-    - If the MeCab tokenizer is not available, the module automatically uses Mroonga's standard tokenizer.
+3.  Diagnostics admin page
+    - Shows plugin status, table engine/comment, TokenMecab availability, FULLTEXT index info, resource counts (indexed vs actual), recent jobs (with Open/Log links).
+    - Buttons to manually switch engines (to Mroonga / back to InnoDB) and to run segmented reindex jobs.
 
-4.  **Strict `AND` / `OR` Logic:**
-    - Unlike Omeka S's default natural language mode, this module enforces strict search conditions.
-    - `AND`: Returns only results that contain all specified keywords.
-    - `OR`: Returns results that contain any of the specified keywords.
+4.  Segmented reindex jobs with progress logging
+    - Items only / Items + Item sets / Media only. Each logs page-by-page progress to the job log.
 
-5.  **Safe Installation and Uninstallation:**
-    - **On Install:** The module checks if Mroonga is active. It then safely alters the table engine. If any issues occur, it attempts to recover gracefully.
-    - **On Uninstall:** The module reverts the `fulltext_search` table back to the standard InnoDB engine, ensuring your Omeka S site remains fully functional without the module.
+5.  Safer operations and fallbacks
+    - Foreign keys handled during engine switches; FULLTEXT(title,text) ensured; single-term CJK on non-effective environments uses LIKE for recall.
 
 ## Installation
 
-While this module works without Mroonga, installing it is recommended for better performance.
+This module works without Mroonga, but installing Mroonga + MeCab yields the best results.
 
-1.  **Install Mroonga (Recommended):**
-    - For high-speed, CJK-aware full-text search, install the Mroonga storage engine in your database.
-    - See the official Mroonga website for instructions: [https://mroonga.org/](https://mroonga.org/)
+1) Install Mroonga (recommended)
+- See https://mroonga.org/ for installation guidance.
 
-2.  **Install MeCab Tokenizer (Optional but Recommended):**
-    - For even more accurate Japanese morphological analysis, installing `groonga-tokenizer-mecab` is recommended.
+2) Install groonga-tokenizer-mecab (optional, recommended)
+- Enables morphological tokenization for best accuracy.
 
-3.  **Install the Module:**
-    - Unzip the module and place the `MroongaSearch` folder into your Omeka S `modules` directory.
-    - Log in to your Omeka S admin dashboard, navigate to the "Modules" section, and activate "MroongaSearch".
+3) Install the module
+- Unzip into `modules/MroongaSearch` and enable from Admin > Modules.
 
-**Note:** Activating the module may trigger a search index rebuild job, which can take some time depending on the amount of data.
-
-No further configuration is required. The module will automatically detect your environment and apply the appropriate search enhancements.
+Note: Depending on your data size, indexing jobs may take time.
 
 ## Usage
 
-When performing a full-text search, you can control the search logic by adding a `logic` parameter to the query URL:
+- Full-text search parameters
+    - `fulltext_search=...` and `logic=and|or`
+    - Single-term CJK on non-effective Mroonga: falls back to LIKE for recall.
 
--   **AND Search:** `?fulltext_search=keyword1+keyword2&logic=and`
--   **OR Search:** `?fulltext_search=keyword1+keyword2&logic=or`
-
-If the `logic` parameter is omitted, it typically defaults to `AND`.
+- Admin > Mroonga Search > Diagnostics
+    - Check status and counts; switch engines manually; run segmented reindex jobs; inspect recent jobs with Open/Log.
 
 ## License
 
@@ -90,11 +79,12 @@ Mroongaエンジンが利用可能な環境では、モジュールは自動的�
 ## 主な機能
 
 1.  **日本語全文検索の強化 (Mroongaなし環境):**
-    -   Omeka Sのデフォルト全文検索は日本語でうまく機能しません。このモジュールは、CJK（日中韓）言語に`LIKE`検索を利用することで擬似的に全文検索が利用できるようにします。
+    - 単語1件のCJKはLIKEで広く拾い、それ以外は厳密なBOOLEANで検索。
+    - 厳密な AND/OR を適用。
 
 2.  **Mroongaによる高速検索 (Mroongaあり環境):**
-    -   データベースでMroongaプラグインが有効な場合、モジュールは自動的に`fulltext_search`テーブルのエンジンをMroongaに切り替えます。
-    -   これにより、CJK言語に対応した高速な全文検索が実現します。
+    - 「有効なMroonga」（Mroonga ACTIVE かつ テーブルENGINE=Mroonga）のとき、トークン一致で高精度検索（MeCab利用時はさらに高精度）。
+    - 非有効時は自動フォールバック。
 
 3.  **MeCab連携による高精度な検索（オプション）:**
     -   `groonga-tokenizer-mecab`が利用可能な環境では、MeCabをトークナイザとして利用し、より高精度な日本語検索を実現します。
@@ -106,7 +96,10 @@ Mroongaエンジンが利用可能な環境では、モジュールは自動的�
     -   `AND`検索: 指定したすべてのキーワードを含む資料のみを返します。
     -   `OR`検索: 指定したキーワードのいずれかを含む資料を返します。
 
-5.  **安全なインストールとアンインストール:**
+5.  **安全な運用（Diagnostics/手動切替/分割再インデックス）:**
+    - 管理画面の Diagnostics で状態確認、エンジン切替（Mroonga/ InnoDB）、分割再インデックス（Items / Items+Item sets / Media）を実行。
+    - エンジン切替時の外部キー対応、`FULLTEXT(title,text)` の保証。
+    - Recent jobs に Open/Log リンク、件数に応じた再実行の警告確認。
     -   **インストール時:** Mroongaが有効かを確認し、安全にテーブルエンジンを変更します。問題が発生した場合は、正常な状態を維持しようと試みます。
     -   **アンインストール時:** `fulltext_search`テーブルを標準のInnoDBエンジンに戻します。これにより、モジュールを無効にしてもサイトが問題なく機能し続けます。
 
@@ -125,7 +118,7 @@ Mroongaエンジンが利用可能な環境では、モジュールは自動的�
     -   モジュールを解凍し、`MroongaSearch`フォルダをOmeka Sの`modules`ディレクトリに配置します。
     -   Omeka Sの管理画面にログインし、「モジュール」セクションで「MroongaSearch」を有効化します。
 
-**注意:** モジュールを有効化すると、検索インデックスの再構築ジョブが実行される場合があります。データ量によっては完了まで時間がかかることがあります。
+注意: データ量によってはインデックス処理に時間がかかります。
 
 これ以上の設定は不要です。モジュールが自動的に環境を検出し、適切な検索強化を適用します。
 
@@ -133,8 +126,12 @@ Mroongaエンジンが利用可能な環境では、モジュールは自動的�
 
 全文検索の際、URLに`logic`パラメータを追加することで、検索ロジックを制御できます。
 
--   **AND検索:** `?fulltext_search=キーワード1+キーワード2&logic=and`
--   **OR検索:** `?fulltext_search=キーワード1+キーワード2&logic=or`
+ - AND検索: `?fulltext_search=キーワード1+キーワード2&logic=and`
+ - OR検索: `?fulltext_search=キーワード1+キーワード2&logic=or`
+ - 単語1件CJK（Mroonga非有効時）はLIKEで広く拾います。
+
+管理 > Mroonga Search > Diagnostics
+ - ステータス・件数確認、エンジン切替（Mroonga / InnoDB）、分割再インデックス（Items / Items+Item sets / Media）、最近のジョブ（Open / Log）にアクセスできます。
 
 `logic`パラメータを省略した場合、通常は`AND`検索として扱われます。
 
