@@ -77,7 +77,7 @@ This ensures the system remains functional even if the database environment chan
 
 ## License
 
-This module is licensed under the Apache License, Version 2.0.
+This module is released under the MIT License. See the LICENSE file for details.
 
 ---
 
@@ -160,5 +160,5 @@ This module is licensed under the Apache License, Version 2.0.
 
 ## ライセンス
 
-このモジュールは、Apache License, Version 2.0 の下でライセンスされています。
+このモジュールは MIT ライセンスで提供されています。詳細は LICENSE ファイルをご覧ください。
 
