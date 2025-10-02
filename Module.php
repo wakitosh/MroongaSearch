@@ -458,20 +458,10 @@ class Module extends AbstractModule {
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
 
-        // Kick off fulltext reindex job if possible.
-        try {
-          $dispatcher = $this->getServiceLocator()->get('Omeka\\Job\\Dispatcher');
-          if ($dispatcher) {
-            $dispatcher->dispatch('Omeka\\Job\\IndexFulltextSearch');
-            if ($logger) {
-              $logger->info('MroongaSearch: Dispatched IndexFulltextSearch job after table recreation.');
-            }
-          }
-        }
-        catch (\Throwable $ignore) {
-          if ($logger) {
-            $logger->warn('MroongaSearch: Could not dispatch IndexFulltextSearch job automatically. Please reindex fulltext manually from admin.');
-          }
+        // Do NOT auto-dispatch a full reindex here: it may take many hours.
+        // Instead, guide admins to run segmented reindex jobs from Diagnostics.
+        if ($logger) {
+          $logger->warn('MroongaSearch: fulltext_search was recreated as InnoDB. Please run manual reindex from Admin > Mroonga Search > Indexing.');
         }
       }
       catch (\Throwable $fatal) {
@@ -666,20 +656,10 @@ class Module extends AbstractModule {
           ['title', 'text']
         );
 
-        // Dispatch fulltext reindex job so data gets populated.
-        try {
-          $dispatcher = $this->getServiceLocator()->get('Omeka\\Job\\Dispatcher');
-          if ($dispatcher) {
-            $dispatcher->dispatch('Omeka\\Job\\IndexFulltextSearch');
-            if ($logger) {
-              $logger->info('MroongaSearch: Dispatched IndexFulltextSearch job after Mroonga table recreation.');
-            }
-          }
-        }
-        catch (\Throwable $ignore) {
-          if ($logger) {
-            $logger->warn('MroongaSearch: Could not dispatch IndexFulltextSearch job automatically. Please reindex fulltext manually from admin.');
-          }
+        // Do NOT auto-dispatch a full reindex here: it may take many hours.
+        // Instead, guide admins to run segmented reindex jobs from Diagnostics.
+        if ($logger) {
+          $logger->warn('MroongaSearch: fulltext_search was recreated as Mroonga. Please run manual reindex from Admin > Mroonga Search > Indexing.');
         }
       }
       catch (\Throwable $fatal) {

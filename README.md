@@ -33,6 +33,8 @@ This version has been significantly enhanced to provide robust fallback mechanis
     - If **not active**, it remains on `InnoDB` and operates in a fallback mode.
 3.  Navigate to the admin **Mroonga Search** page (`/admin/mroonga-search/diagnostics`) to verify the status and manually trigger re-indexing if needed.
 
+Note (v4.2.1): After table recreation, this module no longer auto-starts a full reindex to avoid multi-hour jobs being triggered implicitly. Use the Diagnostics page to run segmented reindex jobs. When indexed counts are lower than database totals, the Diagnostics page shows a banner recommending manual reindex and warns about duration on large datasets.
+
 ## Usage
 
 ### Advanced Search
@@ -115,6 +117,8 @@ This module is released under the MIT License. See the LICENSE file for details.
     - **ACTIVE の場合**: `fulltext_search` テーブルのエンジンを `Mroonga` に切り替えます。`TokenMecab` が利用可能であれば、それも設定します。
     - **非ACTIVE の場合**: `InnoDB` のまま、フォールバックモードで動作します。
 3.  管理者画面の **Mroonga Search** ページ（`/admin/mroonga-search/diagnostics`）にアクセスし、状態を確認し、必要であれば手動で再インデックスを実行してください。
+
+注記（v4.2.1）: テーブル再作成後にフル再インデックスを自動起動しない仕様に変更しました。誤って長時間ジョブを開始しないための措置です。診断ページから分割再インデックスを実行してください。インデックス済み件数が実データ件数より少ない場合は、診断ページに案内バナーとデータ規模に応じた所要時間の注意が表示されます。
 
 ## 使い方
 

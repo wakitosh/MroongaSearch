@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.2.1] - 2025-10-02
+
+### Added
+- Diagnostics page banner that recommends manual reindex when indexed counts are below database totals; includes duration warnings for large datasets (≥10k/≥50k rows).
+
+### Changed
+- Stopped auto-dispatching full reindex after `fulltext_search` table recreation (both InnoDB and Mroonga). Instead, log guidance to run segmented reindex jobs manually from Diagnostics.
+- README updated to clarify the manual reindex policy and link users to Diagnostics.
+
+---
+### 追加
+- インデックス済み件数が実データ件数より少ない場合に、診断ページで再インデックスを推奨するバナーを表示。大規模データセット（1万/5万件以上）では所要時間に関する注意も併記。
+
+### 変更
+- `fulltext_search` テーブル再作成後（InnoDB/Mroonga いずれも）にフル再インデックスを自動起動しないよう変更。代わりにログで案内し、診断ページから分割再インデックスを手動で実行する方針に統一。
+- README を更新し、手動再インデックスの方針と診断ページへの導線を明確化。
+
 ## [4.2.0] - 2025-10-02
 
 ### Added

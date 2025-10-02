@@ -1,7 +1,7 @@
 <?php
 /** @var \Laminas\View\Renderer\PhpRenderer $this */
 $__ = function(string $s, string $domain = 'mroonga-search') { return $this->plugin('translate')->__invoke($s, $domain); };
-$this->htmlElement('body')->appendAttribute('class', 'media search');
+$this->htmlElement('body')->appendAttribute('class', 'mroonga-diagnostics-page');
 $this->headLink()->prependStylesheet($this->assetUrl('vendor/tablesaw/tablesaw.stackonly.css', 'Omeka'));
 $this->headScript()->prependFile($this->assetUrl('vendor/tablesaw/tablesaw.stackonly.jquery.js', 'Omeka'), 'text/javascript', ['defer' => 'defer']);
 $pluginActive = (bool) ($this->pluginActive ?? false);
@@ -31,9 +31,11 @@ $fmtDate = function($v): string {
   return (string) $v;
 };
 ?>
-<div class="mroonga-diagnostics">
   <?= $this->pageTitle('Mroonga Search Diagnostics'); ?>
-  <p><?= $this->escapeHtml($__('- Status overview (JA/EN below)', 'mroonga-search')); ?></p>
+  <p>
+    <strong>JP:</strong> プラグインACTIVE/ACTIVEとテーブルエンジン、トークナイザ(TokenMecab)の状況を表示します。プラグインがACTIVEでもテーブルエンジンがInnoDBのままの場合、「Mroonga effective」はNOとなり、単語1件のCJK検索はLIKEフォールバックで実行されます。Mroongaを有効にしたい場合は、ENGINEをMroongaに変更（可能ならtokenizer "TokenMecab" を付与）し、再インデックスしてください。<br>
+    <strong>EN:</strong> This page shows plugin status, table engine, tokenizer availability, and index info. When the plugin is ACTIVE but the table engine is still InnoDB, "Mroonga effective" is NO and fallback search is used. To enable Mroonga, switch the table engine to Mroonga (optionally with tokenizer "TokenMecab") and reindex.
+  </p>
 
   <style>
     .mrd-grid { display: grid; grid-template-columns: 220px 1fr; gap: 6px 12px; max-width: 860px; }
@@ -73,6 +75,32 @@ $fmtDate = function($v): string {
       <div class="mrd-key">Mroonga effective (plugin+engine)</div>
       <div class="mrd-val"><?= $effective ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?></div>
     </div>
+    <?php
+      // If counts are missing or significantly lower than totals, suggest manual reindex.
+      $needsReindex = false;
+      $sumCnt = 0; $sumTot = 0;
+      foreach (['items','item_sets','media'] as $k) {
+        $c = isset($counts[$k]) ? (int)$counts[$k] : 0;
+        $t = isset($totals[$k]) ? (int)$totals[$k] : 0;
+        $sumCnt += $c; $sumTot += $t;
+      }
+      if ($sumTot > 0 && ($sumCnt === 0 || $sumCnt < (int)floor($sumTot * 0.9))) {
+        $needsReindex = true;
+      }
+      $scaleNote = '';
+      if ($sumTot >= 50000) {
+        $scaleNote = 'Large dataset detected (≥ 50,000 rows). Reindex may take hours.';
+      } elseif ($sumTot >= 10000) {
+        $scaleNote = 'Note: Reindex may take a long time on this dataset (≥ 10,000 rows).';
+      }
+    ?>
+    <?php if ($needsReindex): ?>
+      <div style="margin-top:10px;padding:10px;border-left:4px solid #d9831f;background:#fff8e6;color:#5c3b00;max-width:860px;">
+        <strong>Action recommended:</strong> Indexed counts are lower than database totals. Please run manual reindex from the <em>Indexing (manual)</em> section below. <?= $this->escapeHtml($scaleNote); ?>
+        <br>
+        <strong>推奨操作:</strong> インデックス済み件数が実データ件数より少ないため、下部の「手動インデックス」から再インデックスを実行してください。<?= $this->escapeHtml($scaleNote ? ' ' . $scaleNote . '（数時間以上かかる場合があります）' : ''); ?>
+      </div>
+    <?php endif; ?>
     <p class="mrd-note">
       - If <strong>Mroonga effective</strong> is NO, fallback search is used (CJK LIKE for single terms, BOOLEAN for others).<br>
       - To enable Mroonga fully, switch <code>fulltext_search</code> to ENGINE=Mroonga (with optional <code>tokenizer "TokenMecab"</code>) and reindex.
@@ -161,7 +189,6 @@ $fmtDate = function($v): string {
       <p>(No recent jobs)</p>
     <?php endif; ?>
   </div>
-
   <div class="mrd-sec">
     <h3>Indexing (manual)</h3>
     <p class="mrd-note">Choose what to (re)index. Jobs append progress to each job’s log.</p>
@@ -222,11 +249,4 @@ $fmtDate = function($v): string {
       </div>
     </div>
   </div>
-  <div class="mrd-sec">
-    <h3>JA/EN Notes</h3>
-    <p>
-      <strong>JP:</strong> プラグインACTIVE/ACTIVEとテーブルエンジン、トークナイザ(TokenMecab)の状況を表示します。プラグインがACTIVEでもテーブルエンジンがInnoDBのままの場合、「Mroonga effective」はNOとなり、単語1件のCJK検索はLIKEフォールバックで実行されます。Mroongaを有効にしたい場合は、ENGINEをMroongaに変更（可能ならtokenizer "TokenMecab" を付与）し、再インデックスしてください。<br>
-      <strong>EN:</strong> This page shows plugin status, table engine, tokenizer availability, and index info. When the plugin is ACTIVE but the table engine is still InnoDB, "Mroonga effective" is NO and fallback search is used. To enable Mroonga, switch the table engine to Mroonga (optionally with tokenizer "TokenMecab") and reindex.
-    </p>
-  </div>
-</div>
+
