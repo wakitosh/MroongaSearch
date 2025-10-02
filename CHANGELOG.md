@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.2.3] - 2025-10-02
+
+### Changed
+- InnoDB fallback refined to match README: for single-term queries, apply LIKE '%term%' only when the term is a continuous CJK string; for single non-CJK terms, defer to Omeka core's natural-language behavior to avoid double filtering.
+
+---
+### 変更
+- README 記載に合わせて InnoDB フォールバックを調整: 単一語検索は CJK 連続語の場合のみ LIKE '%term%' を適用し、非CJKではコアの自然言語検索に委譲して二重適用を避ける。
+
 ## [4.2.2] - 2025-10-02
 
 ### Changed

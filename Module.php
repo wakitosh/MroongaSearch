@@ -101,6 +101,58 @@ class Module extends AbstractModule {
 
     // Shared events manager for attaching search listeners below.
     $shared = $application->getEventManager()->getSharedManager();
+    $services = $application->getServiceManager();
+    $self = $this;
+
+    // Early parameter diversion: move fulltext_search to a private key
+    // (ms_fulltext) in cases where this module will handle search logic.
+    // This prevents the core natural-language MATCH clause from being added
+    // and combining with our conditions to yield zero results.
+    $shared->attach('*', 'api.search.query', function ($ev) use ($services, $self) {
+      try {
+        $request = $ev->getParam('request');
+        if (!$request || !method_exists($request, 'getContent') || !method_exists($request, 'setContent')) {
+          return;
+        }
+        $query = $request->getContent() ?: [];
+        if (!isset($query['fulltext_search'])) {
+          return;
+        }
+        $full = trim((string) $query['fulltext_search']);
+        if ($full === '') {
+          return;
+        }
+        $conn = $services->get('Omeka\\Connection');
+        $tokens = $self->tokenizeFulltext($full);
+
+        if ($self->isMroongaEffective($conn)) {
+          // Mroonga: divert for multi-term strict logic; single term = core.
+          if (count($tokens) > 1) {
+            $query['ms_fulltext'] = $full;
+            unset($query['fulltext_search']);
+            $request->setContent($query);
+          }
+          return;
+        }
+
+        // Non-Mroonga (InnoDB etc):
+        if (count($tokens) > 1) {
+          // Multi-term strict AND/OR is handled here.
+          $query['ms_fulltext'] = $full;
+          unset($query['fulltext_search']);
+          $request->setContent($query);
+          return;
+        }
+        if (count($tokens) === 1 && $self->isCjkContinuous($tokens[0])) {
+          // Single CJK term uses LIKE fallback here.
+          $query['ms_fulltext'] = $full;
+          unset($query['fulltext_search']);
+          $request->setContent($query);
+        }
+      }
+      catch (\Throwable $ignore) {
+      }
+    }, 1000);
 
     // Early guard: Prevent core natural-language fulltext from running when.
     // we intend to handle strict semantics ourselves.
@@ -180,6 +232,24 @@ class Module extends AbstractModule {
         }
         $glue = $useOr ? ' OR ' : ' AND ';
         $qb->andWhere('(' . implode($glue, $perToken) . ')');
+
+        // Visibility constraints (mirror core behavior).
+        try {
+          $acl = $services->get('Omeka\\Acl');
+          if (!$acl->userIsAllowed('Omeka\\Entity\\Resource', 'view-all')) {
+            $constraints = $qb->expr()->eq(sprintf('%s.isPublic', $alias), TRUE);
+            $identity = $services->get('Omeka\\AuthenticationService')->getIdentity();
+            if ($identity) {
+              $constraints = $qb->expr()->orX(
+                $constraints,
+                $qb->expr()->eq(sprintf('%s.owner', $alias), $identity->getId())
+              );
+            }
+            $qb->andWhere($constraints);
+          }
+        }
+        catch (\Throwable $ignore) {
+        }
       }
       catch (\Throwable $e) {
         // Fail silently to avoid breaking search in case of unexpected issues.
@@ -187,7 +257,8 @@ class Module extends AbstractModule {
     }, -100);
 
     // Fallback strict AND/OR for non-Mroonga environments using BOOLEAN MODE.
-    // This augments core natural-mode matching to differentiate AND vs OR.
+    // This augments core natural-mode matching to differentiate AND vs OR and
+    // applies LIKE for single-term CJK queries per README.
     $shared->attach('*', 'api.search.query', function ($ev) use ($services, $self) {
       try {
         $conn = $services->get('Omeka\\Connection');
@@ -238,6 +309,45 @@ class Module extends AbstractModule {
         $logic = strtolower((string) ($query['fulltext_logic'] ?? ($query['logic'] ?? 'and')));
         $useOr = ($logic === 'or');
 
+        // Special-case: single term.
+        if (count($tokens) <= 1) {
+          $term = $tokens[0] ?? '';
+          if ($term !== '' && $self->isCjkContinuous($term)) {
+            // Single CJK term: use LIKE against title/text.
+            $alias = $adapter->createAlias();
+            $resourceName = $adapter->getResourceName();
+            $joinConditions = sprintf(
+              '%s.id = omeka_root.id AND %s.resource = %s',
+              $alias,
+              $alias,
+              $adapter->createNamedParameter($qb, $resourceName)
+            );
+            $qb->innerJoin('Omeka\\Entity\\FulltextSearch', $alias, 'WITH', $joinConditions);
+            $like = $adapter->createNamedParameter($qb, '%' . $term . '%');
+            $qb->andWhere(sprintf('(%s.title LIKE %s OR %s.text LIKE %s)', $alias, $like, $alias, $like));
+
+            // Visibility constraints (mirror core behavior).
+            try {
+              $acl = $services->get('Omeka\\Acl');
+              if (!$acl->userIsAllowed('Omeka\\Entity\\Resource', 'view-all')) {
+                $constraints = $qb->expr()->eq(sprintf('%s.isPublic', $alias), TRUE);
+                $identity = $services->get('Omeka\\AuthenticationService')->getIdentity();
+                if ($identity) {
+                  $constraints = $qb->expr()->orX(
+                    $constraints,
+                    $qb->expr()->eq(sprintf('%s.owner', $alias), $identity->getId())
+                  );
+                }
+                $qb->andWhere($constraints);
+              }
+            }
+            catch (\Throwable $ignore) {
+            }
+          }
+          // For non-CJK single term, delegate to core natural-mode behavior.
+          return;
+        }
+
         // Join a separate alias to apply constraints per-token.
         $alias = $adapter->createAlias();
         // Compare resource column with the API resource name (e.g., 'items'),
@@ -270,6 +380,24 @@ class Module extends AbstractModule {
         }
         $glue = $useOr ? ' OR ' : ' AND ';
         $qb->andWhere('(' . implode($glue, $perToken) . ')');
+
+        // Visibility constraints (mirror core behavior).
+        try {
+          $acl = $services->get('Omeka\\Acl');
+          if (!$acl->userIsAllowed('Omeka\\Entity\\Resource', 'view-all')) {
+            $constraints = $qb->expr()->eq(sprintf('%s.isPublic', $alias), TRUE);
+            $identity = $services->get('Omeka\\AuthenticationService')->getIdentity();
+            if ($identity) {
+              $constraints = $qb->expr()->orX(
+                $constraints,
+                $qb->expr()->eq(sprintf('%s.owner', $alias), $identity->getId())
+              );
+            }
+            $qb->andWhere($constraints);
+          }
+        }
+        catch (\Throwable $ignore) {
+        }
       }
       catch (\Throwable $e) {
         // Ignore to avoid breaking search in edge cases.
