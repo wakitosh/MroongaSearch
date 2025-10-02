@@ -33,6 +33,10 @@ This version has been significantly enhanced to provide robust fallback mechanis
     - If **not active**, it remains on `InnoDB` and operates in a fallback mode.
 3.  Navigate to the admin **Mroonga Search** page (`/admin/mroonga-search/diagnostics`) to verify the status and manually trigger re-indexing if needed.
 
+#### After activation / 有効化後
+- There is NO automatic redirect to Diagnostics. Open “Admin → Mroonga Search → Diagnostics” manually to review status and actions.
+- 自動で診断ページへは遷移しません。管理画面の「Mroonga Search → Diagnostics」を手動で開いて、状態確認と必要な操作を行ってください。
+
 Note (v4.2.1): After table recreation, this module no longer auto-starts a full reindex to avoid multi-hour jobs being triggered implicitly. Use the Diagnostics page to run segmented reindex jobs. When indexed counts are lower than database totals, the Diagnostics page shows a banner recommending manual reindex and warns about duration on large datasets.
 
 ## Usage
@@ -56,6 +60,23 @@ The **Mroonga Search** admin page is your hub for managing the search system.
     - **Engine Switching**: Manually switch the table engine to `Mroonga` or back to `InnoDB`. Use this for testing or maintenance.
     - **Manual Re-index**: Run segmented re-indexing jobs. This is the recommended way to rebuild the search index as it minimizes search disruption. A dynamic confirmation will warn you if you are about to re-index a large number of resources.
 
+#### Manual indexing (segmented) / 手動再インデックス（分割実行）
+- Items only
+- Item sets only
+- Media only
+
+Notes:
+- Large datasets may take hours. The Run buttons show stronger warnings for ≥10k/≥50k rows.
+- 大規模データでは時間を要します。実行ボタンは 1万/5万件以上で強い警告を表示します。
+
+#### Diagnostics page structure / 診断ページの構成
+1) Notes（EN/JA）
+2) Overview
+3) Action required（EN/JA）
+4) Switch to Mroonga（button）
+5) Action recommended（EN/JA）
+6) Others (FULLTEXT indexes, counts, Indexing, Recent jobs)
+
 ## For Developers: Technical Details
 
 ### Search Behavior
@@ -68,6 +89,7 @@ The module's behavior depends on whether Mroonga is "effectively" active (Mroong
 - **Effective Mroonga: OFF** (Fallback Mode)
     - **Multi-term queries**: Uses standard InnoDB `MATCH(...) AGAINST(... IN BOOLEAN MODE)` to simulate `AND`/`OR`.
     - **Single-term CJK queries**: Uses `LIKE '%term%'` for a substring match, providing better recall for un-tokenized CJK text.
+    - **Single non-CJK term**: Delegates to Omeka core's natural-language fulltext to avoid double filtering.
 
 ### Automatic Engine Management
 
@@ -153,6 +175,13 @@ This module is released under the MIT License. See the LICENSE file for details.
 - **Mroonga無効時**（フォールバックモード）
     - **複数キーワード検索**: 標準の InnoDB の `MATCH(...) AGAINST(... IN BOOLEAN MODE)` を使用して `AND`/`OR` をシミュレートします。
     - **単一CJK単語の検索**: `LIKE '%term%'` を使用した部分一致検索を行い、トークン化されていないCJKテキストに対する再現率（recall）を高めます。
+    - **単一の非CJK単語**: コアの自然言語モードに委譲して、条件の二重適用を避けます。
+
+## Integration: IiifSearchCarousel
+- “Effective Mroonga” means the Mroonga plugin is ACTIVE and `fulltext_search` engine is Mroonga.
+- When effective, CJK tokenization (TokenMecab) can be used to generate example keywords; otherwise a safe regex-based fallback is used.
+- 「Effective Mroonga」は、Mroonga プラグインが ACTIVE で、`fulltext_search` のエンジンが Mroonga の状態を指します。
+- 有効時は TokenMecab によりCJKの例示キーワード生成が可能で、無効時は正規表現ベースのフォールバックが使われます。
 
 ### エンジンの自動管理
 
