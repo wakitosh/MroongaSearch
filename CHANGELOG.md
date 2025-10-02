@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.2.2] - 2025-10-02
+
+### Changed
+- Removed all automatic redirects to Diagnostics after module activation. Admins are instructed to open the Diagnostics page manually; avoids interfering with install/activate flows across environments.
+- Reordered Diagnostics page sections: Notes → Overview → Action required (EN/JA) → Switch to Mroonga (button) → Action recommended (EN/JA) → rest unchanged.
+
+---
+### 変更
+- モジュール有効化後の診断ページへの自動リダイレクトをすべて削除。環境差によるインストール/有効化フローへの干渉を防止し、管理者が手動で診断ページを開く運用に統一。
+- 診断ページのセクション順序を整理: Notes → Overview → 要対応（英日）→ Switch to Mroonga（ボタン）→ 推奨操作（英日）→ 以降は現状維持。
+
 ## [4.2.1] - 2025-10-02
 
 ### Added

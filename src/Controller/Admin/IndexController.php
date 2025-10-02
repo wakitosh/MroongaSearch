@@ -4,7 +4,7 @@ namespace MroongaSearch\Controller\Admin;
 
 use Laminas\Mvc\Controller\AbstractActionController;
 use MroongaSearch\Job\ReindexItemsOnly;
-use MroongaSearch\Job\ReindexItemsAndSets;
+use MroongaSearch\Job\ReindexItemSetsOnly;
 use MroongaSearch\Job\ReindexMediaOnly;
 use Laminas\View\Model\ViewModel;
 
@@ -26,8 +26,8 @@ class IndexController extends AbstractActionController {
    * Dispatch the items+item sets reindex job.
    */
   public function reindexItemsSetsAction() {
-    $this->jobDispatcher()->dispatch(ReindexItemsAndSets::class);
-    $this->messenger()->addSuccess('Dispatched: Reindex items + item sets');
+    $this->jobDispatcher()->dispatch(ReindexItemSetsOnly::class);
+    $this->messenger()->addSuccess('Dispatched: Reindex item sets only');
     return $this->redirect()->toRoute('admin/default', ['controller' => 'job', 'action' => 'browse']);
   }
 
@@ -155,7 +155,7 @@ class IndexController extends AbstractActionController {
       $classes = [
         'Omeka\\Job\\IndexFulltextSearch',
         'MroongaSearch\\Job\\ReindexItemsOnly',
-        'MroongaSearch\\Job\\ReindexItemsAndSets',
+        'MroongaSearch\\Job\\ReindexItemSetsOnly',
         'MroongaSearch\\Job\\ReindexMediaOnly',
       ];
       $qb = $em->createQueryBuilder();

@@ -57,6 +57,29 @@ $fmtDate = function($v): string {
     .mrd-note { color: #555; font-size: .95em; }
   </style>
 
+  <?php
+    // Precompute flags used by top banners and buttons.
+    $canSwitchToMroongaTop = $pluginActive && (!$engine || strcasecmp($engine, 'Mroonga') !== 0);
+    $switchUrlTop = $this->url('admin/mroonga-switch-engine');
+    // Reindex recommendation flags.
+    $needsReindex = false;
+    $sumCnt = 0; $sumTot = 0;
+    foreach (['items','item_sets','media'] as $k) {
+      $c = isset($counts[$k]) ? (int)$counts[$k] : 0;
+      $t = isset($totals[$k]) ? (int)$totals[$k] : 0;
+      $sumCnt += $c; $sumTot += $t;
+    }
+    if ($sumTot > 0 && ($sumCnt === 0 || $sumCnt < (int)floor($sumTot * 0.9))) {
+      $needsReindex = true;
+    }
+    $scaleNote = '';
+    if ($sumTot >= 50000) {
+      $scaleNote = 'Large dataset detected (≥ 50,000 rows). Reindex may take hours.';
+    } elseif ($sumTot >= 10000) {
+      $scaleNote = 'Note: Reindex may take a long time on this dataset (≥ 10,000 rows).';
+    }
+  ?>
+
   <div class="mrd-sec">
     <h3>Overview</h3>
     <div class="mrd-grid">
@@ -75,38 +98,44 @@ $fmtDate = function($v): string {
       <div class="mrd-key">Mroonga effective (plugin+engine)</div>
       <div class="mrd-val"><?= $effective ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?></div>
     </div>
-    <?php
-      // If counts are missing or significantly lower than totals, suggest manual reindex.
-      $needsReindex = false;
-      $sumCnt = 0; $sumTot = 0;
-      foreach (['items','item_sets','media'] as $k) {
-        $c = isset($counts[$k]) ? (int)$counts[$k] : 0;
-        $t = isset($totals[$k]) ? (int)$totals[$k] : 0;
-        $sumCnt += $c; $sumTot += $t;
-      }
-      if ($sumTot > 0 && ($sumCnt === 0 || $sumCnt < (int)floor($sumTot * 0.9))) {
-        $needsReindex = true;
-      }
-      $scaleNote = '';
-      if ($sumTot >= 50000) {
-        $scaleNote = 'Large dataset detected (≥ 50,000 rows). Reindex may take hours.';
-      } elseif ($sumTot >= 10000) {
-        $scaleNote = 'Note: Reindex may take a long time on this dataset (≥ 10,000 rows).';
-      }
-    ?>
-    <?php if ($needsReindex): ?>
-      <div style="margin-top:10px;padding:10px;border-left:4px solid #d9831f;background:#fff8e6;color:#5c3b00;max-width:860px;">
-        <strong>Action recommended:</strong> Indexed counts are lower than database totals. Please run manual reindex from the <em>Indexing (manual)</em> section below. <?= $this->escapeHtml($scaleNote); ?>
-        <br>
-        <strong>推奨操作:</strong> インデックス済み件数が実データ件数より少ないため、下部の「手動インデックス」から再インデックスを実行してください。<?= $this->escapeHtml($scaleNote ? ' ' . $scaleNote . '（数時間以上かかる場合があります）' : ''); ?>
-      </div>
-    <?php endif; ?>
+    <?php /* Action recommended block moved below per requested order. */ ?>
     <p class="mrd-note">
       - If <strong>Mroonga effective</strong> is NO, fallback search is used (CJK LIKE for single terms, BOOLEAN for others).<br>
       - To enable Mroonga fully, switch <code>fulltext_search</code> to ENGINE=Mroonga (with optional <code>tokenizer "TokenMecab"</code>) and reindex.
     </p>
     <?php /* Switch buttons are consolidated into the Indexing (manual) section below. */ ?>
   </div>
+
+  <?php if (!$effective): ?>
+    <div style="margin:10px 0;padding:10px;border-left:4px solid #d9831f;background:#fff8e6;color:#5c3b00;max-width:860px;">
+      <strong>Action required:</strong>
+      <?php if ($canSwitchToMroongaTop): ?>
+        Mroonga is not effectively enabled (plugin active, table engine not Mroonga). Please switch the <code>fulltext_search</code> table engine to <strong>Mroonga</strong> below. This operation performs DDL and may briefly lock the table.
+      <?php else: ?>
+        Mroonga is not effectively enabled. Ensure the Mroonga plugin is ACTIVE on your MySQL/MariaDB server. If already ACTIVE, verify the <code>fulltext_search</code> table engine is set to <strong>Mroonga</strong>.
+      <?php endif; ?>
+      <br>
+      <strong>要対応:</strong>
+      <?php if ($canSwitchToMroongaTop): ?>
+        Mroonga が有効（effective）になっていません（プラグインはACTIVEだがテーブルエンジンがMroongaではありません）。下のボタンでテーブルエンジンを <strong>Mroonga</strong> に切り替えてください。この操作はDDLを伴い、短時間ロックが発生する可能性があります。
+      <?php else: ?>
+        Mroonga が有効（effective）になっていません。DBサーバーでMroongaプラグインが <strong>ACTIVE</strong> であることを確認し、必要に応じて <code>fulltext_search</code> テーブルエンジンを <strong>Mroonga</strong> に設定してください。
+      <?php endif; ?>
+    </div>
+    <?php if ($canSwitchToMroongaTop): ?>
+      <div style="margin:6px 0 12px 0;max-width:860px;">
+        <a class="button" href="<?= $this->escapeHtml($switchUrlTop); ?>" onclick="return confirm('Switch fulltext_search to ENGINE=Mroonga. この操作はDDLを伴い、短時間ロックが発生します。実行しますか？');">Switch to Mroonga</a>
+      </div>
+    <?php endif; ?>
+  <?php endif; ?>
+
+  <?php if ($needsReindex): ?>
+    <div style="margin:10px 0;padding:10px;border-left:4px solid #d9831f;background:#fff8e6;color:#5c3b00;max-width:860px;">
+      <strong>Action recommended:</strong> Indexed counts are lower than database totals. Please run manual reindex from the <em>Indexing (manual)</em> section below. <?= $this->escapeHtml($scaleNote); ?>
+      <br>
+      <strong>推奨操作:</strong> インデックス済み件数が実データ件数より少ないため、下部の「手動インデックス」から再インデックスを実行してください。<?= $this->escapeHtml($scaleNote ? ' ' . $scaleNote . '（数時間以上かかる場合があります）' : ''); ?>
+    </div>
+  <?php endif; ?>
 
   <div class="mrd-sec">
     <h3>FULLTEXT indexes</h3>
@@ -154,42 +183,6 @@ $fmtDate = function($v): string {
   </div>
 
   <div class="mrd-sec">
-    <h3>Recent jobs</h3>
-    <?php $jobs = is_array($this->jobs ?? null) ? $this->jobs : []; ?>
-    <?php if ($jobs): ?>
-      <table class="mrd-table tablesaw tablesaw-stack" data-tablesaw-mode="stack">
-        <thead><tr><th class="mrd-col-id">ID</th><th class="mrd-col-class">Class</th><th class="mrd-col-status">Status</th><th class="mrd-col-start">Started</th><th class="mrd-col-end">Ended</th><th class="mrd-col-actions"></th></tr></thead>
-        <tbody>
-        <?php foreach ($jobs as $j): $jid = (int)($j['id'] ?? 0); ?>
-          <tr>
-            <td class="mrd-col-id"><?= $jid; ?></td>
-            <td class="mrd-col-class"><code><?= $this->escapeHtml((string)($j['class'] ?? '')); ?></code></td>
-            <td class="mrd-col-status"><?= $this->escapeHtml((string)($j['status'] ?? '')); ?></td>
-            <td class="mrd-col-start"><?= $this->escapeHtml($fmtDate($j['started'] ?? null)); ?></td>
-            <td class="mrd-col-end"><?= $this->escapeHtml($fmtDate($j['ended'] ?? null)); ?></td>
-            <td class="mrd-col-actions">
-              <?php if ($jid > 0): ?>
-                <?php
-                  $jobUrl = $this->url('admin/id', ['controller' => 'job', 'action' => 'show', 'id' => $jid]);
-                  $logUrl = $this->url('admin/id', ['controller' => 'job', 'action' => 'log', 'id' => $jid]);
-                ?>
-                <div class="mrd-actions">
-                  <a class="button" href="<?= $this->escapeHtml($jobUrl); ?>">Open</a>
-                  <a class="button" href="<?= $this->escapeHtml($logUrl); ?>">Log</a>
-                </div>
-              <?php else: ?>
-                -
-              <?php endif; ?>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-        </tbody>
-      </table>
-    <?php else: ?>
-      <p>(No recent jobs)</p>
-    <?php endif; ?>
-  </div>
-  <div class="mrd-sec">
     <h3>Indexing (manual)</h3>
     <p class="mrd-note">Choose what to (re)index. Jobs append progress to each job’s log.</p>
     <?php
@@ -200,7 +193,7 @@ $fmtDate = function($v): string {
       $switchInnoUrl = $this->url('admin/mroonga-switch-innodb');
       // Reindex job URLs
       $reItemsUrl = $this->url('admin/mroonga-reindex-items');
-      $reItemsSetsUrl = $this->url('admin/mroonga-reindex-items-sets');
+  $reItemSetsUrl = $this->url('admin/mroonga-reindex-items-sets');
       $reMediaUrl = $this->url('admin/mroonga-reindex-media');
     ?>
     <script>
@@ -237,10 +230,10 @@ $fmtDate = function($v): string {
         <?php $itemCount = isset($counts['items']) ? (int)$counts['items'] : (isset($totals['items']) ? (int)$totals['items'] : null); ?>
         <a class="button" href="<?= $this->escapeHtml($reItemsUrl); ?>" onclick="return window.__mrdConfirm('items', <?= $itemCount !== null ? (int)$itemCount : 'null' ?>);">Run</a>
       </div>
-      <div class="mrd-key">Reindex: Items + Item sets</div>
+      <div class="mrd-key">Reindex: Item sets only</div>
       <div class="mrd-val">
-        <?php $isCount = (isset($counts['items']) ? (int)$counts['items'] : 0) + (isset($counts['item_sets']) ? (int)$counts['item_sets'] : 0); if (!$isCount) { $isCount = (isset($totals['items']) ? (int)$totals['items'] : 0) + (isset($totals['item_sets']) ? (int)$totals['item_sets'] : 0); } ?>
-        <a class="button" href="<?= $this->escapeHtml($reItemsSetsUrl); ?>" onclick="return window.__mrdConfirm('items + item sets', <?= (int)$isCount ?>);">Run</a>
+        <?php $isetCount = isset($counts['item_sets']) ? (int)$counts['item_sets'] : (isset($totals['item_sets']) ? (int)$totals['item_sets'] : null); ?>
+        <a class="button" href="<?= $this->escapeHtml($reItemSetsUrl); ?>" onclick="return window.__mrdConfirm('item sets', <?= $isetCount !== null ? (int)$isetCount : 'null' ?>);">Run</a>
       </div>
       <div class="mrd-key">Reindex: Media only</div>
       <div class="mrd-val">
@@ -248,5 +241,42 @@ $fmtDate = function($v): string {
         <a class="button" href="<?= $this->escapeHtml($reMediaUrl); ?>" onclick="return window.__mrdConfirm('media', <?= $mediaCount !== null ? (int)$mediaCount : 'null' ?>);">Run</a>
       </div>
     </div>
+  </div>
+
+  <div class="mrd-sec">
+    <h3>Recent jobs</h3>
+    <?php $jobs = is_array($this->jobs ?? null) ? $this->jobs : []; ?>
+    <?php if ($jobs): ?>
+      <table class="mrd-table tablesaw tablesaw-stack" data-tablesaw-mode="stack">
+        <thead><tr><th class="mrd-col-id">ID</th><th class="mrd-col-class">Class</th><th class="mrd-col-status">Status</th><th class="mrd-col-start">Started</th><th class="mrd-col-end">Ended</th><th class="mrd-col-actions"></th></tr></thead>
+        <tbody>
+        <?php foreach ($jobs as $j): $jid = (int)($j['id'] ?? 0); ?>
+          <tr>
+            <td class="mrd-col-id"><?= $jid; ?></td>
+            <td class="mrd-col-class"><code><?= $this->escapeHtml((string)($j['class'] ?? '')); ?></code></td>
+            <td class="mrd-col-status"><?= $this->escapeHtml((string)($j['status'] ?? '')); ?></td>
+            <td class="mrd-col-start"><?= $this->escapeHtml($fmtDate($j['started'] ?? null)); ?></td>
+            <td class="mrd-col-end"><?= $this->escapeHtml($fmtDate($j['ended'] ?? null)); ?></td>
+            <td class="mrd-col-actions">
+              <?php if ($jid > 0): ?>
+                <?php
+                  $jobUrl = $this->url('admin/id', ['controller' => 'job', 'action' => 'show', 'id' => $jid]);
+                  $logUrl = $this->url('admin/id', ['controller' => 'job', 'action' => 'log', 'id' => $jid]);
+                ?>
+                <div class="mrd-actions">
+                  <a class="button" href="<?= $this->escapeHtml($jobUrl); ?>">Open</a>
+                  <a class="button" href="<?= $this->escapeHtml($logUrl); ?>">Log</a>
+                </div>
+              <?php else: ?>
+                -
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php else: ?>
+      <p>(No recent jobs)</p>
+    <?php endif; ?>
   </div>
 

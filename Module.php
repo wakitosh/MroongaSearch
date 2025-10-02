@@ -94,8 +94,12 @@ class Module extends AbstractModule {
       catch (\Throwable $ignore) {
         // Ignore logger errors.
       }
-      // Best-effort: ignore and continue.
+      // Auto-redirect after activation has been removed. Admins should open
+      // the Diagnostics page manually after enabling the module to verify
+      // status and run segmented reindex jobs as needed.
     }
+
+    // Shared events manager for attaching search listeners below.
     $shared = $application->getEventManager()->getSharedManager();
 
     // Early guard: Prevent core natural-language fulltext from running when.
@@ -103,52 +107,6 @@ class Module extends AbstractModule {
     // - Non-Mroonga: 常に退避（従来通り）。
     // - Mroonga: トークン数が2個以上のときは退避（strict AND/OR を当モジュールで実装）。
     // こうすることで、コアの自然言語条件と当モジュールの条件が二重適用されるのを防ぎます.
-    try {
-      $services = $application->getServiceManager();
-      $self = $this;
-      $shared->attach('*', 'api.search.query', function ($ev) use ($services, $self) {
-        try {
-          $request = $ev->getParam('request');
-          if (!$request) {
-            return;
-          }
-          $conn = $services->get('Omeka\\Connection');
-          $query = $request->getContent() ?: [];
-          $full = isset($query['fulltext_search']) ? trim((string) $query['fulltext_search']) : '';
-          if ($full === '') {
-            return;
-          }
-          $tokens = $self->tokenizeFulltext($full);
-          // Treat Mroonga as "effective" only when plugin is ACTIVE and
-          // the fulltext_search table engine is actually Mroonga.
-          $mroongaEffective = $self->isMroongaEffective($conn);
-          $shouldDivert = FALSE;
-          if ($mroongaEffective) {
-            // Mroonga が有効でトークン数が2以上なら、strict AND/OR は当モジュールが担当.
-            $shouldDivert = count($tokens) >= 2;
-          }
-          else {
-            // 非Mroongaでは常に退避してコア自然言語検索を抑止します.
-            $shouldDivert = TRUE;
-          }
-          if (!$shouldDivert) {
-            return;
-          }
-          // Remove fulltext_search from the request to prevent core
-          // natural-mode fulltext from running. Keep it into `ms_fulltext`.
-          $query = $request->getContent() ?: [];
-          $query['ms_fulltext'] = $query['fulltext_search'];
-          unset($query['fulltext_search']);
-          $request->setContent($query);
-        }
-        catch (\Throwable $e) {
-          // Ignore and continue.
-        }
-      }, 10000);
-    }
-    catch (\Throwable $e) {
-      // Ignore and continue.
-    }
     // Run after core listeners (use low/negative priority)
     // to keep visibility and ordering intact.
     $services = $application->getServiceManager();

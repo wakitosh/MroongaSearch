@@ -78,6 +78,17 @@ return [
               ],
             ],
           ],
+          'mroonga-reindex-item-sets' => [
+            'type' => Literal::class,
+            'options' => [
+              'route' => '/mroonga-reindex-item-sets',
+              'defaults' => [
+                '__NAMESPACE__' => 'MroongaSearch\\Controller\\Admin',
+                'controller' => 'Index',
+                'action' => 'reindexItemsSets',
+              ],
+            ],
+          ],
           'mroonga-reindex-media' => [
             'type' => Literal::class,
             'options' => [
