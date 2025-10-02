@@ -9,24 +9,65 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ## [4.2.0] - 2025-10-02
 
 ### Added
-- Admin Diagnostics page consolidating engine status (plugin/engine/comment/tokenizer), FULLTEXT indexes, indexed vs actual counts, and recent jobs.
-- Manual engine switching buttons (to Mroonga / back to InnoDB) with safe FK handling and FULLTEXT(title,text) ensure.
-- Segmented reindex jobs (Items only / Items + Item sets / Media only) with per-page progress logs.
-- Recent jobs table with Open and Log links; DateTime rendered with site timezone.
-- Run buttons show dynamic confirmations based on target row counts (strong warnings for large volumes).
+- **Admin Diagnostics Page**: A central hub to monitor Mroonga status, manage the search engine, and run indexing jobs. It shows:
+    - Plugin status, table engine/comment, and TokenMecab availability.
+    - "Effective Mroonga" status (Plugin ACTIVE + Engine=Mroonga).
+    - `FULLTEXT` index details.
+    - Indexed resource counts vs. actual database totals.
+    - A list of recent indexing-related jobs with direct links to job details and logs.
+- **Manual Engine Switching**: Buttons on the Diagnostics page to safely switch the `fulltext_search` table between `Mroonga` and `InnoDB`.
+- **Segmented Re-indexing**: Manually trigger re-indexing jobs for "Items only," "Items + Item Sets," or "Media only" to minimize search disruption.
+- **Dynamic Confirmations**: JavaScript confirmation dialogs on "Run" buttons that warn users when re-indexing a large number of resources.
+- **Developer Documentation**: A new section in `README.md` explaining the technical details of search behavior and automatic engine management.
 
 ### Changed
-- Search listeners now use the “effective Mroonga” concept (plugin ACTIVE + table ENGINE=Mroonga) to decide behavior.
-- Admin menu consolidated to a single “Mroonga Search” item that leads to Diagnostics; engine switching duplicated button removed from Overview.
-- Tablesaw-based table styling for better responsive behavior; class cell wrapping to avoid overlaps.
+- **Consolidated Admin Menu**: The admin navigation now has a single "Mroonga Search" link pointing to the Diagnostics page.
+- **Manual Re-index Workflow**: Switching the engine no longer automatically triggers a re-index. Users are now instructed to manually run the desired re-indexing job from the Diagnostics page.
+- **UI/UX**:
+    - The Diagnostics page uses responsive tables (Tablesaw) for better viewing on small screens.
+    - Long class names in the "Recent Jobs" table now wrap correctly.
+    - "Open" and "Log" buttons for jobs are aligned horizontally.
+- **Search Behavior Logic**: Search listeners now check for "Effective Mroonga" to determine whether to use Mroonga-specific features or the InnoDB fallback.
+- **README Overhaul**: The `README.md` file was completely rewritten to reflect the new features, clarify installation, and provide detailed usage instructions in both English and Japanese.
 
 ### Fixed
-- Diagnostics template errors (template path, closure lexical $this, transaction-related issues in tokenizer probe) resolved.
-- Job detail links fixed to use the correct route (admin/id) to avoid 404 for valid job IDs; hide link when ID is missing.
-- Prevent buttons from overflowing table cells; align Open/Log horizontally.
+- **Job Links**: The "Open" link for a job now correctly points to the job details page, resolving a 404 error. Links are hidden if a job ID is invalid.
+- **DateTime Display**: Job start/end times in the "Recent Jobs" table are now correctly formatted as strings and respect the Omeka S site's timezone.
+- **Diagnostics Page Errors**: Resolved several internal errors related to template path resolution, `lexical $this` in closures, and database transactions during the TokenMecab probe.
 
 ### Notes
-- Default behavior differences are intentional: single-term CJK under non-effective Mroonga uses LIKE (wider recall), while effective Mroonga uses token-based matching (higher precision).
+- The difference in search results for single CJK terms between Mroonga (token-based) and InnoDB (LIKE-based) is intentional. Mroonga provides higher precision, while the fallback offers broader recall.
+
+---
+### 追加
+- **管理者向け診断ページ**: Mroonga の状態監視、検索エンジンの管理、インデックスジョブの実行を中央管理するハブ機能。以下の情報を表示します:
+    - プラグインの状態、テーブルのエンジン/コメント、TokenMecab の可用性
+    - 「有効なMroonga」の状態（プラグインがACTIVE + エンジンがMroonga）
+    - `FULLTEXT` インデックスの詳細
+    - インデックス済みリソース数とデータベースの実際の総数との比較
+    - 最近のインデックス関連ジョブの一覧（ジョブ詳細とログへの直接リンク付き）
+- **手動エンジン切替**: 診断ページ上のボタンで `fulltext_search` テーブルのエンジンを `Mroonga` と `InnoDB` の間で安全に切り替え。
+- **分割再インデックス**: 「アイテムのみ」「アイテム＋アイテムセット」「メディアのみ」の再インデックスジョブを手動で実行し、検索の中断を最小化。
+- **動的確認ダイアログ**: 大量のリソースを再インデックスする際に警告するJavaScriptの確認ダイアログを「実行」ボタンに設置。
+- **開発者向けドキュメント**: `README.md` に検索の挙動やエンジンの自動管理に関する技術的な詳細を説明するセクションを新設。
+
+### 変更
+- **集約された管理メニュー**: 管理画面のナビゲーションを「Mroonga Search」に一本化し、診断ページにリンク。
+- **手動再インデックスのワークフロー**: エンジンを切り替えても自動で再インデックスが実行されなくなりました。ユーザーは診断ページから手動で目的の再インデックスジョブを実行する必要があります。
+- **UI/UX**:
+    - 診断ページでレスポンシブテーブル（Tablesaw）を使用し、小画面での閲覧性を向上。
+    - 「最近のジョブ」テーブルで長いクラス名が正しく折り返されるように修正。
+    - ジョブの「開く」「ログ」ボタンを水平に配置。
+- **検索挙動のロジック**: 検索リスナーが「有効なMroonga」の状態をチェックし、Mroonga固有の機能を使うかInnoDBのフォールバックを使うかを決定するように変更。
+- **READMEの全面改訂**: `README.md` を全面的に書き直し、新機能を反映させ、インストール方法を明確化し、日英両方で詳細な使い方を説明。
+
+### 修正
+- **ジョブリンク**: ジョブの「開く」リンクが正しくジョブ詳細ページを指すように修正し、404エラーを解決。ジョブIDが無効な場合はリンクを非表示に。
+- **日時表示**: 「最近のジョブ」テーブルの開始/終了時刻が正しく文字列としてフォーマットされ、Omeka Sサイトのタイムゾーンを尊重するように修正。
+- **診断ページのエラー**: テンプレートパスの解決、クロージャ内での `lexical $this`、TokenMecabの調査中のデータベーストランザクションに関連する複数の内部エラーを解決。
+
+### 注記
+- 単一のCJK単語に対するMroonga（トークンベース）とInnoDB（LIKEベース）の検索結果の違いは意図的なものです。Mroongaはより高い精度を、フォールバックはより広い再現率を提供します。
 
 ## [4.1.0] - 2025-09-29
 
