@@ -103,6 +103,9 @@ $fmtDate = function($v): string {
       - If <strong>Mroonga effective</strong> is NO, fallback search is used (CJK LIKE for single terms, BOOLEAN for others).<br>
       - To enable Mroonga fully, switch <code>fulltext_search</code> to ENGINE=Mroonga (with optional <code>tokenizer "TokenMecab"</code>) and reindex.
     </p>
+    <p>
+      <a class="button" href="<?= $this->escapeHtml($this->url('admin/mroonga-benchmark')); ?>">Run search benchmark</a>
+    </p>
     <?php /* Switch buttons are consolidated into the Indexing (manual) section below. */ ?>
   </div>
 

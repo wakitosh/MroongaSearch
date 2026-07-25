@@ -77,6 +77,32 @@ Notes:
 5) Action recommended（EN/JA）
 6) Others (FULLTEXT indexes, counts, Indexing, Recent jobs)
 
+### Search Benchmark
+
+The admin benchmark page (`/admin/mroonga-benchmark`) runs repeated Omeka API full-text searches through the same MroongaSearch listeners used by normal UI/API search. It reports min/average/median/p95/max response times and can download raw CSV results.
+
+Use it to compare:
+
+- Effective Mroonga (`fulltext_search` ENGINE=Mroonga, ideally with TokenMecab)
+- Fallback mode (`fulltext_search` ENGINE=InnoDB)
+- AND and OR behavior for the same query set
+- Search response time and total hit count differences
+
+For fair comparison, use the same query list, resource type, result limit, warmup count, and measured run count before and after switching engines. Run on a staging clone or during low-traffic hours when testing production data.
+
+### 検索ベンチマーク
+
+管理者向けベンチマークページ（`/admin/mroonga-benchmark`）では、通常のUI/API検索と同じMroongaSearchリスナーを通るOmeka API全文検索を反復実行し、最小・平均・中央値・p95・最大応答時間を表示し、CSVとしてダウンロードできます。
+
+比較対象の例:
+
+- Mroonga有効時（`fulltext_search` が ENGINE=Mroonga、可能ならTokenMecabあり）
+- フォールバック時（`fulltext_search` が ENGINE=InnoDB）
+- 同一クエリセットに対するAND/OR条件
+- 検索応答時間と総ヒット件数の差
+
+公平に比較するため、エンジン切替前後で、同じクエリリスト、リソース種別、返却件数、ウォームアップ回数、測定回数を用いてください。本番データで試す場合は、ステージング環境または利用の少ない時間帯で実行してください。
+
 ## For Developers: Technical Details
 
 ### Search Behavior

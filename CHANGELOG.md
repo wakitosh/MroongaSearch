@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.3.0] - 2026-07-25
+
+### Added
+- Admin search benchmark page at `/admin/mroonga-benchmark`. It runs repeated Omeka API full-text searches through the same MroongaSearch listeners used by UI/API search, reports min/average/median/p95/max response times, and can download raw CSV results.
+
+---
+### 追加
+- 管理者向け検索ベンチマークページ `/admin/mroonga-benchmark` を追加。UI/API検索と同じMroongaSearchリスナーを通るOmeka API全文検索を反復実行し、最小・平均・中央値・p95・最大応答時間を表示し、CSVとしてダウンロードできるようにした。
+
 ## [4.2.3] - 2025-10-02
 
 ### Changed

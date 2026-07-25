@@ -67,6 +67,17 @@ return [
               ],
             ],
           ],
+          'mroonga-benchmark' => [
+            'type' => Literal::class,
+            'options' => [
+              'route' => '/mroonga-benchmark',
+              'defaults' => [
+                '__NAMESPACE__' => 'MroongaSearch\\Controller\\Admin',
+                'controller' => 'Index',
+                'action' => 'benchmark',
+              ],
+            ],
+          ],
           'mroonga-reindex-items-sets' => [
             'type' => Literal::class,
             'options' => [

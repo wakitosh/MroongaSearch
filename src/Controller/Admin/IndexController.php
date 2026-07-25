@@ -6,6 +6,7 @@ use Laminas\Mvc\Controller\AbstractActionController;
 use MroongaSearch\Job\ReindexItemsOnly;
 use MroongaSearch\Job\ReindexItemSetsOnly;
 use MroongaSearch\Job\ReindexMediaOnly;
+use Laminas\Http\Response;
 use Laminas\View\Model\ViewModel;
 
 /**
@@ -199,6 +200,322 @@ class IndexController extends AbstractActionController {
     ]);
     $vm->setTemplate('mroonga-search/admin/diagnostics');
     return $vm;
+  }
+
+  /**
+   * Benchmark full-text search through the Omeka API search path.
+   */
+  public function benchmarkAction() {
+    $services = $this->getEvent()->getApplication()->getServiceManager();
+    $conn = $services->get('Omeka\Connection');
+    $status = $this->benchmarkStatus($conn);
+    $defaults = [
+      'resource' => 'items',
+      'logic' => 'both',
+      'iterations' => 5,
+      'warmups' => 1,
+      'limit' => 10,
+      'queries' => $this->defaultBenchmarkQueries(),
+    ];
+    $values = $defaults;
+    $results = [];
+    $summary = [];
+    $errors = [];
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? ''));
+
+    if ($method === 'POST') {
+      $values['resource'] = $this->normalizeBenchmarkResource((string) $this->params()->fromPost('resource', $defaults['resource']));
+      $values['logic'] = $this->normalizeBenchmarkLogic((string) $this->params()->fromPost('logic', $defaults['logic']));
+      $values['iterations'] = $this->boundedInt($this->params()->fromPost('iterations', $defaults['iterations']), 1, 50);
+      $values['warmups'] = $this->boundedInt($this->params()->fromPost('warmups', $defaults['warmups']), 0, 10);
+      $values['limit'] = $this->boundedInt($this->params()->fromPost('limit', $defaults['limit']), 0, 100);
+      $values['queries'] = (string) $this->params()->fromPost('queries', $defaults['queries']);
+
+      $queries = $this->parseBenchmarkQueries($values['queries']);
+      if (!$queries) {
+        $errors[] = 'No benchmark queries were provided.';
+      }
+      else {
+        @set_time_limit(0);
+        [$results, $summary] = $this->runBenchmark($queries, $values, $status);
+      }
+
+      if ((string) $this->params()->fromPost('download', '') === '1' && $results) {
+        return $this->benchmarkCsvResponse($results, $values);
+      }
+    }
+
+    $vm = new ViewModel([
+      'status' => $status,
+      'values' => $values,
+      'summary' => $summary,
+      'results' => $results,
+      'errors' => $errors,
+    ]);
+    $vm->setTemplate('mroonga-search/admin/benchmark');
+    return $vm;
+  }
+
+  /**
+   * Read current Mroonga/fulltext_search status for benchmark metadata.
+   */
+  protected function benchmarkStatus($conn): array {
+    $status = [
+      'pluginActive' => FALSE,
+      'engine' => '',
+      'comment' => '',
+      'effective' => FALSE,
+      'tokenMecab' => FALSE,
+    ];
+    try {
+      $sql = "SELECT PLUGIN_STATUS FROM information_schema.PLUGINS WHERE PLUGIN_NAME='Mroonga'";
+      $plugin = $conn->fetchOne($sql);
+      $status['pluginActive'] = ($plugin === 'ACTIVE');
+    }
+    catch (\Throwable $e) {
+    }
+    try {
+      $row = $conn->fetchAssociative('SHOW TABLE STATUS LIKE :t', ['t' => 'fulltext_search']);
+      if (is_array($row)) {
+        $status['engine'] = (string) ($row['Engine'] ?? '');
+        $status['comment'] = (string) ($row['Comment'] ?? '');
+      }
+      $status['effective'] = ($status['pluginActive'] && strcasecmp($status['engine'], 'Mroonga') === 0);
+    }
+    catch (\Throwable $e) {
+    }
+    try {
+      $conn->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f)) ENGINE=Mroonga COMMENT=\'tokenizer "TokenMecab"\'');
+      $conn->executeStatement('DROP TABLE IF EXISTS __mecab_probe');
+      $status['tokenMecab'] = TRUE;
+    }
+    catch (\Throwable $e) {
+      $status['tokenMecab'] = FALSE;
+    }
+    return $status;
+  }
+
+  /**
+   * Run benchmark searches and return raw rows plus grouped summary rows.
+   */
+  protected function runBenchmark(array $queries, array $values, array $status): array {
+    $results = [];
+    $groups = [];
+    $logicModes = $values['logic'] === 'both' ? ['and', 'or'] : [$values['logic']];
+    foreach ($queries as $query) {
+      foreach ($logicModes as $logic) {
+        for ($i = 0; $i < (int) $values['warmups']; $i++) {
+          $this->runBenchmarkSearch($values['resource'], $query, $logic, (int) $values['limit']);
+        }
+        for ($i = 1; $i <= (int) $values['iterations']; $i++) {
+          $row = [
+            'timestamp' => date('c'),
+            'resource' => $values['resource'],
+            'engine' => $status['engine'],
+            'effective' => $status['effective'] ? 'yes' : 'no',
+            'tokenMecab' => $status['tokenMecab'] ? 'yes' : 'no',
+            'query' => $query,
+            'logic' => $logic,
+            'iteration' => $i,
+            'limit' => (int) $values['limit'],
+            'durationMs' => NULL,
+            'totalResults' => NULL,
+            'error' => '',
+          ];
+          try {
+            $started = microtime(TRUE);
+            $response = $this->runBenchmarkSearch($values['resource'], $query, $logic, (int) $values['limit']);
+            $row['durationMs'] = round((microtime(TRUE) - $started) * 1000, 3);
+            $row['totalResults'] = (int) $response->getTotalResults();
+          }
+          catch (\Throwable $e) {
+            $row['error'] = $e->getMessage();
+          }
+          $results[] = $row;
+          $groups[$query . "\t" . $logic][] = $row;
+        }
+      }
+    }
+    return [$results, $this->summarizeBenchmarkGroups($groups)];
+  }
+
+  /**
+   * Execute one API search via the same path as UI/API search.
+   */
+  protected function runBenchmarkSearch(string $resource, string $query, string $logic, int $limit) {
+    return $this->api()->search($resource, [
+      'fulltext_search' => $query,
+      'fulltext_logic' => $logic,
+      'page' => 1,
+      'limit' => $limit,
+      'sort_by' => 'id',
+      'sort_order' => 'asc',
+    ]);
+  }
+
+  /**
+   * Build aggregate statistics for display.
+   */
+  protected function summarizeBenchmarkGroups(array $groups): array {
+    $summary = [];
+    foreach ($groups as $key => $rows) {
+      [$query, $logic] = explode("\t", $key, 2);
+      $durations = [];
+      $totals = [];
+      $errors = 0;
+      foreach ($rows as $row) {
+        if ($row['error'] !== '') {
+          $errors++;
+          continue;
+        }
+        $durations[] = (float) $row['durationMs'];
+        $totals[] = (int) $row['totalResults'];
+      }
+      sort($durations);
+      $totalResults = $totals
+        ? min($totals) . ($this->allSame($totals) ? '' : '-' . max($totals))
+        : '-';
+      $summary[] = [
+        'query' => $query,
+        'logic' => $logic,
+        'runs' => count($rows),
+        'errors' => $errors,
+        'totalResults' => $totalResults,
+        'minMs' => $durations ? round(min($durations), 3) : NULL,
+        'avgMs' => $durations ? round(array_sum($durations) / count($durations), 3) : NULL,
+        'medianMs' => $durations ? round($this->percentile($durations, 0.5), 3) : NULL,
+        'p95Ms' => $durations ? round($this->percentile($durations, 0.95), 3) : NULL,
+        'maxMs' => $durations ? round(max($durations), 3) : NULL,
+      ];
+    }
+    return $summary;
+  }
+
+  /**
+   * Return raw benchmark rows as a downloadable CSV response.
+   */
+  protected function benchmarkCsvResponse(array $rows, array $values) {
+    $fh = fopen('php://temp', 'r+');
+    fputcsv($fh, [
+      'timestamp',
+      'resource',
+      'engine',
+      'effective_mroonga',
+      'token_mecab',
+      'query',
+      'logic',
+      'iteration',
+      'limit',
+      'duration_ms',
+      'total_results',
+      'error',
+    ]);
+    foreach ($rows as $row) {
+      fputcsv($fh, [
+        $row['timestamp'],
+        $row['resource'],
+        $row['engine'],
+        $row['effective'],
+        $row['tokenMecab'],
+        $row['query'],
+        $row['logic'],
+        $row['iteration'],
+        $row['limit'],
+        $row['durationMs'],
+        $row['totalResults'],
+        $row['error'],
+      ]);
+    }
+    rewind($fh);
+    $csv = stream_get_contents($fh);
+    fclose($fh);
+    $response = new Response();
+    $response->setContent($csv);
+    $filename = sprintf('mroonga-benchmark-%s-%s.csv', $values['resource'], date('Ymd-His'));
+    $headers = $response->getHeaders();
+    $headers->addHeaderLine('Content-Type', 'text/csv; charset=UTF-8');
+    $headers->addHeaderLine('Content-Disposition', 'attachment; filename="' . $filename . '"');
+    return $response;
+  }
+
+  /**
+   * Return a default query set for Japanese full-text benchmarks.
+   */
+  protected function defaultBenchmarkQueries(): string {
+    return implode("\n", [
+      '源氏物語',
+      '筑波 山',
+      '江戸 名所',
+      '和歌',
+      '古今 和歌集',
+      '日本 歴史',
+    ]);
+  }
+
+  /**
+   * Parse one benchmark query per non-empty, non-comment line.
+   */
+  protected function parseBenchmarkQueries(string $text): array {
+    $queries = [];
+    foreach (preg_split('/\R/u', $text) ?: [] as $line) {
+      $line = trim($line);
+      if ($line === '' || strpos($line, '#') === 0) {
+        continue;
+      }
+      $queries[] = $line;
+    }
+    return array_values(array_unique($queries));
+  }
+
+  /**
+   * Normalize resource selection to supported API resources.
+   */
+  protected function normalizeBenchmarkResource(string $resource): string {
+    $allowed = ['items', 'item_sets', 'media'];
+    return in_array($resource, $allowed, TRUE) ? $resource : 'items';
+  }
+
+  /**
+   * Normalize logic selection to AND, OR, or both.
+   */
+  protected function normalizeBenchmarkLogic(string $logic): string {
+    $logic = strtolower($logic);
+    return in_array($logic, ['and', 'or', 'both'], TRUE) ? $logic : 'both';
+  }
+
+  /**
+   * Clamp a submitted integer value to a safe range.
+   */
+  protected function boundedInt($value, int $min, int $max): int {
+    return min($max, max($min, (int) $value));
+  }
+
+  /**
+   * Calculate a percentile from an already sorted numeric array.
+   */
+  protected function percentile(array $sortedValues, float $percentile): float {
+    $count = count($sortedValues);
+    if ($count === 0) {
+      return 0.0;
+    }
+    if ($count === 1) {
+      return (float) $sortedValues[0];
+    }
+    $position = ($count - 1) * $percentile;
+    $lower = (int) floor($position);
+    $upper = (int) ceil($position);
+    if ($lower === $upper) {
+      return (float) $sortedValues[$lower];
+    }
+    $weight = $position - $lower;
+    return ((float) $sortedValues[$lower] * (1 - $weight)) + ((float) $sortedValues[$upper] * $weight);
+  }
+
+  /**
+   * Determine whether all scalar values in an array are identical.
+   */
+  protected function allSame(array $values): bool {
+    return count(array_unique($values)) <= 1;
   }
 
   /**

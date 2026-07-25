@@ -1,0 +1,154 @@
+<?php
+/** @var \Laminas\View\Renderer\PhpRenderer $this */
+$this->htmlElement('body')->appendAttribute('class', 'mroonga-benchmark-page');
+$status = is_array($this->status ?? null) ? $this->status : [];
+$values = is_array($this->values ?? null) ? $this->values : [];
+$summary = is_array($this->summary ?? null) ? $this->summary : [];
+$results = is_array($this->results ?? null) ? $this->results : [];
+$errors = is_array($this->errors ?? null) ? $this->errors : [];
+$escape = fn($value) => $this->escapeHtml((string) $value);
+?>
+<?= $this->pageTitle('Mroonga Search Benchmark'); ?>
+
+<style>
+  .msb-grid { display: grid; grid-template-columns: 220px 1fr; gap: 8px 12px; max-width: 960px; }
+  .msb-key { font-weight: 600; color: #333; }
+  .msb-note { color: #555; font-size: .95em; max-width: 960px; }
+  .msb-ok { color: #0a7f2e; font-weight: 600; }
+  .msb-warn { color: #b33; font-weight: 600; }
+  .msb-table { border-collapse: collapse; width: 100%; max-width: 1100px; table-layout: fixed; }
+  .msb-table th, .msb-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .msb-table code { white-space: normal; overflow-wrap: anywhere; }
+  .msb-num { text-align: right; font-variant-numeric: tabular-nums; }
+  .msb-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .msb-form input[type="number"] { width: 90px; }
+  .msb-form textarea { width: 100%; max-width: 720px; min-height: 150px; font-family: monospace; }
+</style>
+
+<p class="msb-note">
+  This benchmark runs Omeka API full-text searches through the same MroongaSearch listeners used by the site. It does not switch engines or modify the index. To compare Mroonga and fallback, run once while Mroonga is effective, then switch to InnoDB from Diagnostics and run the same query set again.
+</p>
+<p class="msb-note">
+  このベンチマークは、サイト検索と同じMroongaSearchリスナーを通るOmeka API全文検索を反復実行します。エンジン切替やインデックス変更は行いません。Mroonga有効時とフォールバック時を比較する場合は、Diagnosticsでエンジンを切り替え、同じクエリセットで再実行してください。
+</p>
+
+<div class="msb-grid" style="margin: 1em 0;">
+  <div class="msb-key">Mroonga plugin</div>
+  <div><?= !empty($status['pluginActive']) ? '<span class="msb-ok">ACTIVE</span>' : '<span class="msb-warn">INACTIVE</span>'; ?></div>
+  <div class="msb-key">fulltext_search engine</div>
+  <div><code><?= $escape($status['engine'] ?? '(unknown)'); ?></code></div>
+  <div class="msb-key">Mroonga effective</div>
+  <div><?= !empty($status['effective']) ? '<span class="msb-ok">YES</span>' : '<span class="msb-warn">NO</span>'; ?></div>
+  <div class="msb-key">TokenMecab available</div>
+  <div><?= !empty($status['tokenMecab']) ? '<span class="msb-ok">YES</span>' : '<span class="msb-warn">NO</span>'; ?></div>
+</div>
+
+<?php if ($errors): ?>
+  <div style="margin:10px 0;padding:10px;border-left:4px solid #b33;background:#fff0f0;color:#5c0000;max-width:960px;">
+    <?php foreach ($errors as $error): ?>
+      <div><?= $escape($error); ?></div>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
+
+<form class="msb-form" method="post" action="<?= $this->escapeHtml($this->url('admin/mroonga-benchmark')); ?>">
+  <div class="msb-grid">
+    <label class="msb-key" for="resource">Resource</label>
+    <select id="resource" name="resource">
+      <?php foreach (['items' => 'Items', 'item_sets' => 'Item sets', 'media' => 'Media'] as $value => $label): ?>
+        <option value="<?= $escape($value); ?>" <?= ($values['resource'] ?? '') === $value ? 'selected' : ''; ?>><?= $escape($label); ?></option>
+      <?php endforeach; ?>
+    </select>
+
+    <label class="msb-key" for="logic">Logic</label>
+    <select id="logic" name="logic">
+      <?php foreach (['both' => 'AND + OR', 'and' => 'AND only', 'or' => 'OR only'] as $value => $label): ?>
+        <option value="<?= $escape($value); ?>" <?= ($values['logic'] ?? '') === $value ? 'selected' : ''; ?>><?= $escape($label); ?></option>
+      <?php endforeach; ?>
+    </select>
+
+    <label class="msb-key" for="iterations">Measured runs/query</label>
+    <input id="iterations" name="iterations" type="number" min="1" max="50" value="<?= $escape($values['iterations'] ?? 5); ?>">
+
+    <label class="msb-key" for="warmups">Warmups/query</label>
+    <input id="warmups" name="warmups" type="number" min="0" max="10" value="<?= $escape($values['warmups'] ?? 1); ?>">
+
+    <label class="msb-key" for="limit">Returned rows</label>
+    <input id="limit" name="limit" type="number" min="0" max="100" value="<?= $escape($values['limit'] ?? 10); ?>">
+
+    <label class="msb-key" for="queries">Queries</label>
+    <textarea id="queries" name="queries"><?= $escape($values['queries'] ?? ''); ?></textarea>
+  </div>
+
+  <p class="msb-note">One query per line. Blank lines and lines beginning with # are ignored. Keep the same list when comparing Mroonga and fallback.</p>
+
+  <div class="msb-actions">
+    <button type="submit" class="button">Run benchmark</button>
+    <button type="submit" class="button" name="download" value="1">Download CSV</button>
+    <a class="button" href="<?= $this->escapeHtml($this->url('admin/mroonga-diagnostics')); ?>">Diagnostics</a>
+  </div>
+</form>
+
+<?php if ($summary): ?>
+  <h3>Summary</h3>
+  <table class="msb-table">
+    <thead>
+      <tr>
+        <th>Query</th>
+        <th>Logic</th>
+        <th class="msb-num">Runs</th>
+        <th class="msb-num">Errors</th>
+        <th class="msb-num">Total results</th>
+        <th class="msb-num">Min ms</th>
+        <th class="msb-num">Avg ms</th>
+        <th class="msb-num">Median ms</th>
+        <th class="msb-num">p95 ms</th>
+        <th class="msb-num">Max ms</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($summary as $row): ?>
+        <tr>
+          <td><code><?= $escape($row['query'] ?? ''); ?></code></td>
+          <td><?= $escape(strtoupper((string) ($row['logic'] ?? ''))); ?></td>
+          <td class="msb-num"><?= $escape($row['runs'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['errors'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['totalResults'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['minMs'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['avgMs'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['medianMs'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['p95Ms'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['maxMs'] ?? ''); ?></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+<?php endif; ?>
+
+<?php if ($results): ?>
+  <h3>Raw runs</h3>
+  <table class="msb-table">
+    <thead>
+      <tr>
+        <th>Query</th>
+        <th>Logic</th>
+        <th class="msb-num">Run</th>
+        <th class="msb-num">Duration ms</th>
+        <th class="msb-num">Total results</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($results as $row): ?>
+        <tr>
+          <td><code><?= $escape($row['query'] ?? ''); ?></code></td>
+          <td><?= $escape(strtoupper((string) ($row['logic'] ?? ''))); ?></td>
+          <td class="msb-num"><?= $escape($row['iteration'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['durationMs'] ?? ''); ?></td>
+          <td class="msb-num"><?= $escape($row['totalResults'] ?? ''); ?></td>
+          <td><?= $escape($row['error'] ?? ''); ?></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+<?php endif; ?>
