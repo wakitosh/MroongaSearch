@@ -98,12 +98,22 @@ class IndexController extends AbstractActionController {
 
     // TokenMecab probe (no transaction; DDL is autocommit).
     try {
-      $conn->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f)) ENGINE=Mroonga COMMENT=\'tokenizer "TokenMecab"\'');
+      $conn->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f) COMMENT \'tokenizer "TokenMecab"\') ENGINE=Mroonga');
       $conn->executeStatement('DROP TABLE IF EXISTS __mecab_probe');
       $tokenMecab = TRUE;
     }
     catch (\Throwable $e) {
       $tokenMecab = FALSE;
+    }
+
+    // Tokenizer actually in use, read from Groonga rather than from the table
+    // comment: the comment records what was requested, not what took effect.
+    $effectiveTokenizer = ['tokenizer' => NULL, 'normalizer' => NULL];
+    try {
+      $module = new \MroongaSearch\Module();
+      $effectiveTokenizer = $module->getEffectiveFulltextTokenizer($conn);
+    }
+    catch (\Throwable $e) {
     }
 
     // Fulltext indexes.
@@ -192,6 +202,9 @@ class IndexController extends AbstractActionController {
       'comment' => $comment,
       'effective' => $effective,
       'tokenMecab' => $tokenMecab,
+      'effectiveTokenizer' => $effectiveTokenizer,
+      'declaredTokenizer' => \MroongaSearch\Module::FULLTEXT_TOKENIZER,
+      'declaredNormalizer' => \MroongaSearch\Module::FULLTEXT_NORMALIZER,
       'fulltextIndexes' => $fulltextIndexes,
       'counts' => $counts,
       'totals' => $totals,
@@ -285,7 +298,7 @@ class IndexController extends AbstractActionController {
     catch (\Throwable $e) {
     }
     try {
-      $conn->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f)) ENGINE=Mroonga COMMENT=\'tokenizer "TokenMecab"\'');
+      $conn->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f) COMMENT \'tokenizer "TokenMecab"\') ENGINE=Mroonga');
       $conn->executeStatement('DROP TABLE IF EXISTS __mecab_probe');
       $status['tokenMecab'] = TRUE;
     }
@@ -559,21 +572,10 @@ class IndexController extends AbstractActionController {
     catch (\Throwable $e) {
     }
 
-    // Decide comment options.
-    $comment = ' COMMENT=\'table "ms_fulltext"\'';
-    // Probe TokenMecab quickly.
-    $hasMecab = FALSE;
-    try {
-      $conn->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f)) ENGINE=Mroonga COMMENT=\'tokenizer "TokenMecab"\'');
-      $conn->executeStatement('DROP TABLE IF EXISTS __mecab_probe');
-      $hasMecab = TRUE;
-    }
-    catch (\Throwable $e) {
-      $hasMecab = FALSE;
-    }
-    if ($hasMecab) {
-      $comment = ' COMMENT=\'table "ms_fulltext" tokenizer "TokenMecab"\'';
-    }
+    // Table comment pins the Groonga table name only. A tokenizer declared
+    // here would be ignored by Mroonga; it is declared on the index instead.
+    $comment = ' COMMENT=\'' . \MroongaSearch\Module::fulltextTableComment() . '\'';
+    $indexComment = ' COMMENT \'' . \MroongaSearch\Module::fulltextIndexComment() . '\'';
 
     // Try ALTER first.
     $alterOk = FALSE;
@@ -610,7 +612,7 @@ class IndexController extends AbstractActionController {
             `text` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
             PRIMARY KEY (`id`, `resource`),
             KEY `IDX_AA31FE4A7E3C61F9` (`owner_id`),
-            FULLTEXT KEY `IDX_AA31FE4A2B36786B3B8BA7C7` (`title`, `text`)
+            FULLTEXT KEY `IDX_AA31FE4A2B36786B3B8BA7C7` (`title`, `text`)" . $indexComment . "
           ) ENGINE=Mroonga DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci" . $comment;
         $conn->executeStatement($create);
         $alterOk = TRUE;

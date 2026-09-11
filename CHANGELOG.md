@@ -6,6 +6,37 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.4.0] - 2026-09-11
+
+### Fixed
+- Declared tokenizer had no effect. The tokenizer was named in the `fulltext_search` TABLE comment (`tokenizer "TokenMecab"`), but Mroonga reads a tokenizer only from an INDEX comment, so the FULLTEXT index had been built with the default `TokenBigram` all along. The same applies to `table "ms_fulltext"`: the Groonga table is still named `fulltext_search`. The tokenizer is now declared on the index, where it takes effect.
+- The TokenMecab probe was invalid for the same reason: it created a probe table with the tokenizer in a table comment, so the statement succeeded whether or not MeCab was installed and Diagnostics always reported availability. The probe now declares the tokenizer on the index.
+
+### Changed
+- `TokenBigram` is now the explicit, documented tokenizer for `fulltext_search`, paired with `NormalizerMySQLUnicodeCI`. This matches what the index has always done and is deliberate for bibliographic metadata: a morphological tokenizer registers strings such as 筑波大学 or 筑波山 as single morphemes, so a search for 筑波 would stop reaching them.
+- Diagnostics now reports the tokenizer **in use**, read from Groonga's own object list, instead of echoing the engine comment. A mismatch with the declared tokenizer is flagged.
+
+### Added
+- Setting `mroongasearch_suspend_engine_reconcile`. While truthy, `onBootstrap()` leaves the `fulltext_search` engine alone. Without it, any single web request can trigger `ALTER TABLE` on a table of millions of rows whenever the engine and the plugin state disagree.
+
+### Upgrade notes
+- No reindex is required. The effective tokenizer does not change; only the declaration does. Existing indexes keep their current comment until the index is next created (engine switch or table recreation).
+
+---
+### 修正
+- 宣言したトークナイザが効いていなかった。`fulltext_search` の**テーブル**コメントに `tokenizer "TokenMecab"` を指定していたが、Mroonga は**索引**コメントからしかトークナイザを読まないため、全文索引は一貫して既定の `TokenBigram` で構築されていた。`table "ms_fulltext"` も同様に無視されており、Groonga 側の表名は `fulltext_search` のままである。トークナイザの宣言を索引コメントへ移した。
+- TokenMecab の検出も同じ理由で無効だった。テーブルコメントにトークナイザを書いた検査用テーブルを作成していたため、MeCab の有無にかかわらず成功し、診断ページは常に「利用可能」と表示していた。検査を索引コメント方式に改めた。
+
+### 変更
+- `fulltext_search` のトークナイザを `TokenBigram`、ノーマライザを `NormalizerMySQLUnicodeCI` として明示した。これは索引が従来から行っていた動作と同じであり、書誌メタデータに対する選択として意図的なものである。形態素解析では「筑波大学」「筑波山」などが1形態素として登録されるため、「筑波」で検索しても到達できなくなる。
+- 診断ページは、エンジンコメントの再掲ではなく、Groonga のオブジェクト一覧から読んだ**実際に使われている**トークナイザを表示するようにした。宣言と食い違う場合は警告を表示する。
+
+### 追加
+- 設定 `mroongasearch_suspend_engine_reconcile` を追加。真の間は `onBootstrap()` が `fulltext_search` のエンジンに手を出さない。従来は、エンジンとプラグインの状態が食い違うと、任意のWebリクエスト1件が数百万行のテーブルに対する `ALTER TABLE` を引き起こしうる状態だった。
+
+### 移行上の注意
+- 再インデックスは不要。実際のトークナイザは変わらず、宣言が変わるだけである。既存の索引は、次に索引が作り直される時（エンジン切替またはテーブル再作成）まで現在のコメントを保持する。
+
 ## [4.3.0] - 2026-07-25
 
 ### Added

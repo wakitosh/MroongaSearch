@@ -17,11 +17,63 @@ use Omeka\Stdlib\Message;
  * Module bootstrap for MroongaSearch.
  *
  * - On install: verifies Mroonga is ACTIVE and switches fulltext_search to
- *   ENGINE=Mroonga. If TokenMecab is available, sets tokenizer via COMMENT.
+ *   ENGINE=Mroonga, declaring the tokenizer on the FULLTEXT index.
  * - Drops/recreates FK on owner_id around ENGINE change.
  * - On uninstall: switches back to InnoDB and restores FK if missing.
  */
 class Module extends AbstractModule {
+
+  /**
+   * Groonga table name pinned for fulltext_search.
+   *
+   * Note: Mroonga applies neither `table` nor `tokenizer` given in a TABLE
+   * comment to a FULLTEXT index. The Groonga table is therefore named after
+   * the MySQL table regardless of this value; it is kept only so the
+   * declaration is not silently lost if a future Mroonga honours it.
+   */
+  const GROONGA_TABLE = 'ms_fulltext';
+
+  /**
+   * Tokenizer used for the fulltext_search FULLTEXT index.
+   *
+   * TokenBigram is deliberate. This index holds bibliographic metadata in
+   * which proper nouns dominate, and a morphological tokenizer registers
+   * strings such as 筑波大学 or 筑波山 as single morphemes, so a search for
+   * 筑波 would no longer reach them. N-gram matching keeps that recall.
+   *
+   * A tokenizer takes effect only when declared in the INDEX comment; the
+   * same parameter in a TABLE comment is silently ignored by Mroonga.
+   */
+  const FULLTEXT_TOKENIZER = 'TokenBigram';
+
+  /**
+   * Normalizer paired with the tokenizer above.
+   */
+  const FULLTEXT_NORMALIZER = 'NormalizerMySQLUnicodeCI';
+
+  /**
+   * Settings key suspending automatic engine reconciliation on bootstrap.
+   *
+   * When truthy, onBootstrap() leaves the fulltext_search engine alone.
+   * Reconciliation issues ALTER TABLE against a table holding millions of
+   * rows, so it must not fire unattended while an administrator is switching
+   * engines deliberately or while the Mroonga plugin is temporarily absent.
+   */
+  const SETTING_SUSPEND_RECONCILE = 'mroongasearch_suspend_engine_reconcile';
+
+  /**
+   * Build the COMMENT clause declaring the tokenizer on a FULLTEXT index.
+   */
+  public static function fulltextIndexComment(): string {
+    return sprintf('tokenizer "%s" normalizer "%s"', self::FULLTEXT_TOKENIZER, self::FULLTEXT_NORMALIZER);
+  }
+
+  /**
+   * Build the COMMENT clause for the fulltext_search table itself.
+   */
+  public static function fulltextTableComment(): string {
+    return sprintf('table "%s"', self::GROONGA_TABLE);
+  }
 
   /**
    * PSR-4 style autoloader configuration for this module.
@@ -48,7 +100,12 @@ class Module extends AbstractModule {
       $services = $application->getServiceManager();
       /** @var \Doctrine\DBAL\Connection $conn */
       $conn = $services->get('Omeka\\Connection');
-      if (!$this->isMroongaActive($conn)) {
+      if ($this->isEngineReconcileSuspended($services)) {
+        // An administrator has taken the engine under manual control. Leave
+        // it alone: reconciling here would fire ALTER TABLE on a multi-million
+        // row table from whatever request happened to arrive first.
+      }
+      elseif (!$this->isMroongaActive($conn)) {
         $engine = $this->getTableEngine($conn, 'fulltext_search');
         if (strcasecmp($engine, 'Mroonga') === 0) {
           try {
@@ -441,6 +498,77 @@ class Module extends AbstractModule {
   }
 
   /**
+   * Whether automatic engine reconciliation is suspended by an administrator.
+   */
+  protected function isEngineReconcileSuspended(ServiceLocatorInterface $services): bool {
+    try {
+      $settings = $services->get('Omeka\\Settings');
+      return $settings && method_exists($settings, 'get')
+        ? (bool) $settings->get(self::SETTING_SUSPEND_RECONCILE, FALSE)
+        : FALSE;
+    }
+    catch (\Throwable $e) {
+      // If settings are unreadable, keep the historical behaviour.
+      return FALSE;
+    }
+  }
+
+  /**
+   * Read the tokenizer and normalizer Groonga actually uses for the index.
+   *
+   * Reads Groonga's own object list rather than the MySQL table comment,
+   * because the comment records what was requested, not what took effect.
+   * Returns ['tokenizer' => ?string, 'normalizer' => ?string]; both entries
+   * are NULL when the information is unavailable.
+   */
+  public function getEffectiveFulltextTokenizer(Connection $connection): array {
+    $none = ['tokenizer' => NULL, 'normalizer' => NULL];
+    try {
+      $sql = "SELECT mroonga_command('table_list')";
+      $raw = method_exists($connection, 'fetchOne')
+        ? $connection->fetchOne($sql)
+        : $connection->fetchColumn($sql);
+      if (!is_string($raw) || $raw === '') {
+        return $none;
+      }
+      $data = json_decode($raw, TRUE);
+      if (!is_array($data) || count($data) < 2 || !is_array($data[0])) {
+        return $none;
+      }
+      $cols = [];
+      foreach ($data[0] as $col) {
+        $cols[] = is_array($col) ? (string) ($col[0] ?? '') : (string) $col;
+      }
+      foreach (array_slice($data, 1) as $row) {
+        if (!is_array($row)) {
+          continue;
+        }
+        $assoc = [];
+        foreach ($cols as $i => $name) {
+          $assoc[$name] = $row[$i] ?? NULL;
+        }
+        $name = (string) ($assoc['name'] ?? '');
+        // Index lexicons are named "<table>#<index>"; the table itself has no
+        // "#" and carries no tokenizer.
+        if (strpos($name, 'fulltext_search#') !== 0) {
+          continue;
+        }
+        if (empty($assoc['default_tokenizer'])) {
+          continue;
+        }
+        return [
+          'tokenizer' => (string) $assoc['default_tokenizer'],
+          'normalizer' => isset($assoc['normalizer']) ? (string) $assoc['normalizer'] : NULL,
+        ];
+      }
+      return $none;
+    }
+    catch (\Throwable $e) {
+      return $none;
+    }
+  }
+
+  /**
    * Best-effort detection of Mroonga plugin availability.
    */
   protected function isMroongaActive(Connection $connection): bool {
@@ -674,17 +802,14 @@ class Module extends AbstractModule {
       $connection->executeStatement("ALTER TABLE fulltext_search DROP FOREIGN KEY `{$fkName}`");
     }
 
-    // Decide COMMENT options: always pin a distinct Groonga table name to avoid
-    // name conflicts with past objects; add TokenMecab when available.
-    $commentOpts = [
-      'table "ms_fulltext"',
-    ];
-    if ($this->isTokenMecabAvailable($connection)) {
-      $commentOpts[] = 'tokenizer "TokenMecab"';
-    }
-    $comment = " COMMENT='" . implode(' ', $commentOpts) . "'";
+    // Pin a distinct Groonga table name to avoid name conflicts with past
+    // objects. The tokenizer is NOT declared here: Mroonga ignores a
+    // tokenizer given in a table comment, so declaring one would only record
+    // an intention the index does not follow. It belongs on the index, and
+    // ensureFulltextIndex() puts it there.
+    $comment = " COMMENT='" . self::fulltextTableComment() . "'";
 
-    // Switch engine to Mroonga (with optional tokenizer).
+    // Switch engine to Mroonga.
     $sql = "ALTER TABLE fulltext_search ENGINE=Mroonga" . $comment;
     try {
       $connection->executeStatement($sql);
@@ -799,10 +924,18 @@ class Module extends AbstractModule {
       $columns
     );
     $indexName = 'ft_' . implode('_', $columns);
-    $sql = sprintf('ALTER TABLE `%s` ADD FULLTEXT INDEX `%s` (%s)',
+    // Declare the tokenizer here, on the index. Mroonga reads it only from an
+    // index comment; the same parameter in a table comment is ignored, which
+    // is how a declared tokenizer can differ from the one actually in use.
+    $indexComment = '';
+    if (strcasecmp($this->getTableEngine($connection, $table), 'Mroonga') === 0) {
+      $indexComment = " COMMENT '" . self::fulltextIndexComment() . "'";
+    }
+    $sql = sprintf('ALTER TABLE `%s` ADD FULLTEXT INDEX `%s` (%s)%s',
       str_replace('`', '``', $table),
       str_replace('`', '``', $indexName),
-      implode(', ', $quotedCols)
+      implode(', ', $quotedCols),
+      $indexComment
     );
     try {
       $connection->executeStatement($sql);
@@ -837,13 +970,21 @@ class Module extends AbstractModule {
 
   /**
    * Detect TokenMecab availability (probe table create/drop).
+   *
+   * The tokenizer must be declared on the INDEX. An earlier version of this
+   * probe put it in the table comment, where Mroonga ignores it, so the
+   * statement succeeded whether or not MeCab was installed and the probe
+   * always reported availability.
+   *
+   * This is reported for information only. The fulltext_search index uses
+   * self::FULLTEXT_TOKENIZER regardless of the result.
    */
   protected function isTokenMecabAvailable(Connection $connection): bool {
     try {
       if (method_exists($connection, 'beginTransaction')) {
         $connection->beginTransaction();
       }
-      $connection->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f)) ENGINE=Mroonga COMMENT=\'tokenizer "TokenMecab"\'');
+      $connection->executeStatement('CREATE TABLE IF NOT EXISTS __mecab_probe (f TEXT, FULLTEXT INDEX (f) COMMENT \'tokenizer "TokenMecab"\') ENGINE=Mroonga');
       $connection->executeStatement('DROP TABLE IF EXISTS __mecab_probe');
       if (method_exists($connection, 'commit')) {
         $connection->commit();

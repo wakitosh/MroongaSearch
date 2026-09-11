@@ -9,6 +9,10 @@ $effective = (bool) ($this->effective ?? false);
 $engine = (string) ($this->engine ?? '');
 $comment = (string) ($this->comment ?? '');
 $tokenMecab = (bool) ($this->tokenMecab ?? false);
+$eff = (array) ($this->effectiveTokenizer ?? []);
+$effTokenizer = (string) ($eff['tokenizer'] ?? '');
+$effNormalizer = (string) ($eff['normalizer'] ?? '');
+$declaredTokenizer = (string) ($this->declaredTokenizer ?? '');
 $indexes = is_array($this->fulltextIndexes ?? null) ? $this->fulltextIndexes : [];
 $counts = is_array($this->counts ?? null) ? $this->counts : [];
 $totals = is_array($this->totals ?? null) ? $this->totals : [];
@@ -33,8 +37,8 @@ $fmtDate = function($v): string {
 ?>
   <?= $this->pageTitle('Mroonga Search Diagnostics'); ?>
   <p>
-    <strong>JP:</strong> プラグインACTIVE/ACTIVEとテーブルエンジン、トークナイザ(TokenMecab)の状況を表示します。プラグインがACTIVEでもテーブルエンジンがInnoDBのままの場合、「Mroonga effective」はNOとなり、単語1件のCJK検索はLIKEフォールバックで実行されます。Mroongaを有効にしたい場合は、ENGINEをMroongaに変更（可能ならtokenizer "TokenMecab" を付与）し、再インデックスしてください。<br>
-    <strong>EN:</strong> This page shows plugin status, table engine, tokenizer availability, and index info. When the plugin is ACTIVE but the table engine is still InnoDB, "Mroonga effective" is NO and fallback search is used. To enable Mroonga, switch the table engine to Mroonga (optionally with tokenizer "TokenMecab") and reindex.
+    <strong>JP:</strong> プラグインACTIVE/ACTIVEとテーブルエンジン、実際に使われているトークナイザを表示します。プラグインがACTIVEでもテーブルエンジンがInnoDBのままの場合、「Mroonga effective」はNOとなり、単語1件のCJK検索はLIKEフォールバックで実行されます。Mroongaを有効にしたい場合は、ENGINEをMroongaに変更し、再インデックスしてください。なおトークナイザは索引のCOMMENTでのみ有効で、テーブルのCOMMENTに書いても無視されます。<br>
+    <strong>EN:</strong> This page shows plugin status, table engine, the tokenizer actually in use, and index info. When the plugin is ACTIVE but the table engine is still InnoDB, "Mroonga effective" is NO and fallback search is used. To enable Mroonga, switch the table engine to Mroonga and reindex. A tokenizer takes effect only when declared in the index comment; a table comment is ignored.
   </p>
 
   <style>
@@ -92,8 +96,21 @@ $fmtDate = function($v): string {
       <div class="mrd-key">Engine comment</div>
       <div class="mrd-val"><code><?= $this->escapeHtml($comment ?: '(empty)'); ?></code></div>
 
+      <div class="mrd-key">Index tokenizer (in use)</div>
+      <div class="mrd-val">
+        <?php if ($effTokenizer): ?>
+          <code><?= $this->escapeHtml($effTokenizer); ?></code>
+          <?php if ($effNormalizer): ?> / <code><?= $this->escapeHtml($effNormalizer); ?></code><?php endif; ?>
+          <?php if (strcasecmp($effTokenizer, $declaredTokenizer) !== 0): ?>
+            <span class="mrd-warn">(declared: <?= $this->escapeHtml($declaredTokenizer); ?>)</span>
+          <?php endif; ?>
+        <?php else: ?>
+          <span class="mrd-warn">(unknown)</span>
+        <?php endif; ?>
+      </div>
+
       <div class="mrd-key">TokenMecab available</div>
-      <div class="mrd-val"><?= $tokenMecab ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?></div>
+      <div class="mrd-val"><?= $tokenMecab ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?> <span class="mrd-note">(not used by this index)</span></div>
 
       <div class="mrd-key">Mroonga effective (plugin+engine)</div>
       <div class="mrd-val"><?= $effective ? '<span class="mrd-ok">YES</span>' : '<span class="mrd-warn">NO</span>'; ?></div>
@@ -101,7 +118,8 @@ $fmtDate = function($v): string {
     <?php /* Action recommended block moved below per requested order. */ ?>
     <p class="mrd-note">
       - If <strong>Mroonga effective</strong> is NO, fallback search is used (CJK LIKE for single terms, BOOLEAN for others).<br>
-      - To enable Mroonga fully, switch <code>fulltext_search</code> to ENGINE=Mroonga (with optional <code>tokenizer "TokenMecab"</code>) and reindex.
+      - To enable Mroonga fully, switch <code>fulltext_search</code> to ENGINE=Mroonga and reindex.<br>
+      - <strong>Index tokenizer (in use)</strong> is read from Groonga itself, not from the engine comment. A tokenizer named in a <em>table</em> comment is ignored by Mroonga; only an <em>index</em> comment takes effect, so the two can disagree.
     </p>
     <p>
       <a class="button" href="<?= $this->escapeHtml($this->url('admin/mroonga-benchmark')); ?>">Run search benchmark</a>

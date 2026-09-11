@@ -39,7 +39,7 @@ $escape = fn($value) => $this->escapeHtml((string) $value);
   <div><code><?= $escape($status['engine'] ?? '(unknown)'); ?></code></div>
   <div class="msb-key">Mroonga effective</div>
   <div><?= !empty($status['effective']) ? '<span class="msb-ok">YES</span>' : '<span class="msb-warn">NO</span>'; ?></div>
-  <div class="msb-key">TokenMecab available</div>
+  <div class="msb-key">TokenMecab available (not used by this index)</div>
   <div><?= !empty($status['tokenMecab']) ? '<span class="msb-ok">YES</span>' : '<span class="msb-warn">NO</span>'; ?></div>
 </div>
 

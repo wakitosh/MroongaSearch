@@ -13,7 +13,7 @@ This version has been significantly enhanced to provide robust fallback mechanis
 ## Key Features
 
 - **Strict AND/OR Search**: Enforces true `AND` or `OR` logic for multi-term queries, unlike Omeka S's default natural language mode.
-- **CJK Support**: Provides robust search for Japanese and other CJK languages when Mroonga and its `TokenMecab` tokenizer are available. A fallback `LIKE` search is used for single CJK terms in non-Mroonga environments.
+- **CJK Support**: Provides robust search for Japanese and other CJK languages through Mroonga, using the `TokenBigram` tokenizer. A fallback `LIKE` search is used for single CJK terms in non-Mroonga environments.
 - **Diagnostics Page**: A central admin page to monitor Mroonga status, manage the search engine, view indexed data, and run re-indexing jobs.
 - **Manual Engine Switching**: Safely switch the `fulltext_search` table's engine between Mroonga and InnoDB.
 - **Segmented Re-indexing**: Manually run re-indexing jobs for different resource types (Items, Item Sets, Media) to minimize downtime.
@@ -23,13 +23,13 @@ This version has been significantly enhanced to provide robust fallback mechanis
 ### Prerequisites
 
 - **Mroonga**: The Mroonga plugin must be installed and `ACTIVE` in your MySQL/MariaDB server.
-- **TokenMecab (Recommended)**: For optimal Japanese language tokenization, `TokenMecab` should be available to Mroonga.
+- **Tokenizer**: The `fulltext_search` index uses `TokenBigram` with `NormalizerMySQLUnicodeCI`. This is deliberate for bibliographic metadata: a morphological tokenizer such as `TokenMecab` registers proper nouns like 筑波大学 or 筑波山 as single morphemes, so a search for 筑波 would no longer reach them. Note that Mroonga reads a tokenizer only from an **index** comment; the same parameter in a table comment is silently ignored.
 
 ### Steps
 
 1.  Install the module like any other Omeka S module.
 2.  Upon installation, the module automatically checks for an `ACTIVE` Mroonga plugin.
-    - If **active**, it switches the `fulltext_search` table engine to `Mroonga`. It will also set `tokenizer "TokenMecab"` if available.
+    - If **active**, it switches the `fulltext_search` table engine to `Mroonga` and declares the tokenizer on the FULLTEXT index.
     - If **not active**, it remains on `InnoDB` and operates in a fallback mode.
 3.  Navigate to the admin **Mroonga Search** page (`/admin/mroonga-search/diagnostics`) to verify the status and manually trigger re-indexing if needed.
 
@@ -52,7 +52,7 @@ In the advanced search form, the module enhances the "Full-text search" field:
 
 The **Mroonga Search** admin page is your hub for managing the search system.
 
-- **Overview**: Shows Mroonga plugin status, the current engine of the `fulltext_search` table, and whether `TokenMecab` is in use. "Effective Mroonga" status indicates if both the plugin and engine are correctly configured.
+- **Overview**: Shows Mroonga plugin status, the current engine of the `fulltext_search` table, and the tokenizer actually in use (read from Groonga, not from the table comment). "Effective Mroonga" status indicates if both the plugin and engine are correctly configured.
 - **FULLTEXT Indexes**: Lists all `FULLTEXT` indexes on the `fulltext_search` table.
 - **Resource Counts**: Displays the number of indexed resources (`items`, `item_sets`, `media`) and compares them against the actual totals in the database.
 - **Recent Jobs**: Shows the status of recent indexing-related jobs. You can open the job details page or view the job log directly.
@@ -83,7 +83,7 @@ The admin benchmark page (`/admin/mroonga-benchmark`) runs repeated Omeka API fu
 
 Use it to compare:
 
-- Effective Mroonga (`fulltext_search` ENGINE=Mroonga, ideally with TokenMecab)
+- Effective Mroonga (`fulltext_search` ENGINE=Mroonga, index tokenizer `TokenBigram`)
 - Fallback mode (`fulltext_search` ENGINE=InnoDB)
 - AND and OR behavior for the same query set
 - Search response time and total hit count differences
@@ -96,7 +96,7 @@ For fair comparison, use the same query list, resource type, result limit, warmu
 
 比較対象の例:
 
-- Mroonga有効時（`fulltext_search` が ENGINE=Mroonga、可能ならTokenMecabあり）
+- Mroonga有効時（`fulltext_search` が ENGINE=Mroonga、索引のトークナイザは `TokenBigram`）
 - フォールバック時（`fulltext_search` が ENGINE=InnoDB）
 - 同一クエリセットに対するAND/OR条件
 - 検索応答時間と総ヒット件数の差
@@ -110,7 +110,7 @@ For fair comparison, use the same query list, resource type, result limit, warmu
 The module's behavior depends on whether Mroonga is "effectively" active (Mroonga plugin is `ACTIVE` and `fulltext_search` table engine is `Mroonga`).
 
 - **Effective Mroonga: ON**
-    - **Multi-term queries**: Uses Mroonga's `MATCH(...) AGAINST(...)` for strict `AND`/`OR` logic. Queries are tokenized by Mroonga (e.g., via `TokenMecab`).
+    - **Multi-term queries**: The query string is split on whitespace and quoted phrases by this module, and each term becomes its own `MATCH(...) AGAINST(...)` condition combined with strict `AND`/`OR`. Each term is then tokenized by Mroonga with the index tokenizer (`TokenBigram`), so a term can match on part of itself.
     - **Single-term CJK queries**: Handled by Mroonga's tokenizer.
 - **Effective Mroonga: OFF** (Fallback Mode)
     - **Multi-term queries**: Uses standard InnoDB `MATCH(...) AGAINST(... IN BOOLEAN MODE)` to simulate `AND`/`OR`.
@@ -122,6 +122,8 @@ The module's behavior depends on whether Mroonga is "effectively" active (Mroong
 The module includes a self-healing mechanism in `Module.php` that runs on every page load:
 - If the Mroonga plugin is `ACTIVE` but the table engine is `InnoDB`, it automatically switches the table to `Mroonga`.
 - If the plugin is `INACTIVE` but the table engine is `Mroonga`, it automatically reverts the table to `InnoDB` to prevent errors.
+
+Because this runs on every request, either branch can fire `ALTER TABLE` on a table of millions of rows from whatever request arrives first. To take the engine under manual control (maintenance, benchmarking, a deliberate engine switch), set the global setting `mroongasearch_suspend_engine_reconcile` to a truthy value; while it is set, `onBootstrap()` leaves the engine alone. Search keeps working either way: with the table on InnoDB the module steps aside and the `LIKE` fallback handles the query.
 
 This ensures the system remains functional even if the database environment changes, but for explicit control, use the Diagnostics page.
 
@@ -146,7 +148,7 @@ This module is released under the MIT License. See the LICENSE file for details.
 ## 主な機能
 
 - **厳密なAND/OR検索**: 複数キーワード検索時に、Omeka S デフォルトの自然言語モードとは異なり、忠実な `AND` または `OR` 条件を適用します。
-- **CJKサポート**: Mroonga と `TokenMecab` トークナイザが利用可能な場合、日本語を含むCJK言語で安定した検索を実現します。非Mroonga環境では、単一のCJK単語に対して `LIKE` を使ったフォールバック検索が行われます。
+- **CJKサポート**: Mroonga の `TokenBigram` トークナイザにより、日本語を含むCJK言語で安定した検索を実現します。非Mroonga環境では、単一のCJK単語に対して `LIKE` を使ったフォールバック検索が行われます。
 - **Diagnostics（診断）ページ**: Mroonga の状態監視、検索エンジンの管理、インデックス化されたデータの確認、再インデックスジョブの実行を中央管理する管理者ページ。
 - **手動エンジン切替**: `fulltext_search` テーブルのエンジンを Mroonga と InnoDB の間で安全に切り替えます。
 - **分割再インデックス**: リソース種別（アイテム、アイテムセット、メディア）ごとに再インデックスジョブを手動で実行し、ダウンタイムを最小限に抑えます。
@@ -156,13 +158,13 @@ This module is released under the MIT License. See the LICENSE file for details.
 ### 前提条件
 
 - **Mroonga**: MySQL/MariaDB サーバーに Mroonga プラグインがインストールされ、`ACTIVE` になっている必要があります。
-- **TokenMecab（推奨）**: 最適な日本語の形態素解析のために、Mroonga が `TokenMecab` を利用できる状態が推奨されます。
+- **トークナイザ**: `fulltext_search` の索引は `TokenBigram` と `NormalizerMySQLUnicodeCI` を使用します。書誌メタデータに対する選択として意図的なものです。`TokenMecab` のような形態素解析では「筑波大学」「筑波山」などの固有名詞が1形態素として登録されるため、「筑波」で検索しても到達できなくなります。なお Mroonga はトークナイザを**索引**コメントからのみ読み取り、テーブルコメントに書いた場合は無視されます。
 
 ### 手順
 
 1.  他の Omeka S モジュールと同様にインストールします。
 2.  インストール時、モジュールは Mroonga プラグインが `ACTIVE` かどうかを自動で確認します。
-    - **ACTIVE の場合**: `fulltext_search` テーブルのエンジンを `Mroonga` に切り替えます。`TokenMecab` が利用可能であれば、それも設定します。
+    - **ACTIVE の場合**: `fulltext_search` テーブルのエンジンを `Mroonga` に切り替え、全文索引にトークナイザを指定します。
     - **非ACTIVE の場合**: `InnoDB` のまま、フォールバックモードで動作します。
 3.  管理者画面の **Mroonga Search** ページ（`/admin/mroonga-search/diagnostics`）にアクセスし、状態を確認し、必要であれば手動で再インデックスを実行してください。
 
@@ -181,7 +183,7 @@ This module is released under the MIT License. See the LICENSE file for details.
 
 **Mroonga Search** 管理ページは、検索システムを管理するためのハブです。
 
-- **Overview**: Mroonga プラグインの状態、`fulltext_search` テーブルの現在のエンジン、`TokenMecab` が使用中かを表示します。「Effective Mroonga」のステータスは、プラグインとエンジンが両方とも正しく設定されているかを示します。
+- **Overview**: Mroonga プラグインの状態、`fulltext_search` テーブルの現在のエンジン、実際に使用中のトークナイザ（テーブルコメントではなく Groonga から取得）を表示します。「Effective Mroonga」のステータスは、プラグインとエンジンが両方とも正しく設定されているかを示します。
 - **FULLTEXT Indexes**: `fulltext_search` テーブルに存在するすべての `FULLTEXT` インデックスを一覧表示します。
 - **Resource Counts**: インデックス化されたリソース（`items`, `item_sets`, `media`）の数を表示し、データベース内の実際の総数と比較します。
 - **Recent Jobs**: インデックス関連の最近のジョブの状態を表示します。ジョブ詳細ページを開いたり、ジョブログを直接表示したりできます。
@@ -196,7 +198,7 @@ This module is released under the MIT License. See the LICENSE file for details.
 このモジュールの挙動は、Mroonga が「有効（effective）」であるかどうか（Mroonga プラグインが `ACTIVE` かつ `fulltext_search` テーブルのエンジンが `Mroonga`）に依存します。
 
 - **Mroonga有効時**
-    - **複数キーワード検索**: Mroonga の `MATCH(...) AGAINST(...)` を使用し、厳密な `AND`/`OR` ロジックを適用します。クエリは Mroonga によって（例: `TokenMecab` で）トークン化されます。
+    - **複数キーワード検索**: 検索文字列を本モジュールが空白と引用符で区切り、各語をそれぞれ `MATCH(...) AGAINST(...)` の条件として厳密な `AND`/`OR` で結合します。各語はさらに Mroonga が索引のトークナイザ（`TokenBigram`）で分割するため、語の一部での一致が起こりえます。
     - **単一CJK単語の検索**: Mroonga のトークナイザによって処理されます。
 - **Mroonga無効時**（フォールバックモード）
     - **複数キーワード検索**: 標準の InnoDB の `MATCH(...) AGAINST(... IN BOOLEAN MODE)` を使用して `AND`/`OR` をシミュレートします。
@@ -216,6 +218,8 @@ This module is released under the MIT License. See the LICENSE file for details.
 - プラグインが `INACTIVE` なのにテーブルエンジンが `Mroonga` の場合、エラーを防ぐために自動的にテーブルを `InnoDB` に戻します。
 
 これにより、データベース環境が変更されてもシステムは機能し続けますが、明示的な制御を行いたい場合は Diagnostics ページを使用してください。
+
+この処理は毎リクエストで走るため、いずれの分岐も、最初に到達したリクエストが数百万行のテーブルに対する `ALTER TABLE` を発行しうる点に注意してください。保守・ベンチマーク・意図的なエンジン切替などでエンジンを手動管理したい場合は、グローバル設定 `mroongasearch_suspend_engine_reconcile` を真の値に設定してください。設定されている間、`onBootstrap()` はエンジンに手を出しません。どちらの状態でも検索は動作します。テーブルが InnoDB のときはモジュールが処理を降り、`LIKE` フォールバックが検索を担います。
 
 ## ライセンス
 
