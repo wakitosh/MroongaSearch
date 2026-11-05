@@ -8,6 +8,7 @@ use MroongaSearch\Job\ReindexItemSetsOnly;
 use MroongaSearch\Job\ReindexMediaOnly;
 use Laminas\Http\Response;
 use Laminas\View\Model\ViewModel;
+use Omeka\Form\ConfirmForm;
 
 /**
  * Admin controller for MroongaSearch utilities.
@@ -15,9 +16,40 @@ use Laminas\View\Model\ViewModel;
 class IndexController extends AbstractActionController {
 
   /**
+   * Whether the submitted form carries a valid CSRF token.
+   */
+  private function hasValidToken(): bool {
+    $form = $this->getForm(ConfirmForm::class);
+    $form->setData($this->getRequest()->getPost());
+    return $form->isValid();
+  }
+
+  /**
+   * Whether this request may empty the index or alter the table.
+   *
+   * Those operations take hours to undo, so a plain link must never start
+   * them: a browser follows a link on behalf of a signed-in administrator from
+   * any page. They run only from the forms on the Diagnostics page.
+   */
+  private function isConfirmedPost(): bool {
+    if (!$this->getRequest()->isPost()) {
+      $this->messenger()->addError('This operation runs only from the buttons on the Diagnostics page.');
+      return FALSE;
+    }
+    if (!$this->hasValidToken()) {
+      $this->messenger()->addError('Invalid or expired form. Please try again from the Diagnostics page.');
+      return FALSE;
+    }
+    return TRUE;
+  }
+
+  /**
    * Dispatch the items-only reindex job and redirect to jobs list.
    */
   public function reindexItemsAction() {
+    if (!$this->isConfirmedPost()) {
+      return $this->redirect()->toRoute('admin/mroonga-diagnostics');
+    }
     $this->jobDispatcher()->dispatch(ReindexItemsOnly::class);
     $this->messenger()->addSuccess('Dispatched: Reindex items only');
     return $this->redirect()->toRoute('admin/default', ['controller' => 'job', 'action' => 'browse']);
@@ -27,6 +59,9 @@ class IndexController extends AbstractActionController {
    * Dispatch the items+item sets reindex job.
    */
   public function reindexItemsSetsAction() {
+    if (!$this->isConfirmedPost()) {
+      return $this->redirect()->toRoute('admin/mroonga-diagnostics');
+    }
     $this->jobDispatcher()->dispatch(ReindexItemSetsOnly::class);
     $this->messenger()->addSuccess('Dispatched: Reindex item sets only');
     return $this->redirect()->toRoute('admin/default', ['controller' => 'job', 'action' => 'browse']);
@@ -36,6 +71,9 @@ class IndexController extends AbstractActionController {
    * Dispatch the media-only reindex job.
    */
   public function reindexMediaAction() {
+    if (!$this->isConfirmedPost()) {
+      return $this->redirect()->toRoute('admin/mroonga-diagnostics');
+    }
     $this->jobDispatcher()->dispatch(ReindexMediaOnly::class);
     $this->messenger()->addSuccess('Dispatched: Reindex media only');
     return $this->redirect()->toRoute('admin/default', ['controller' => 'job', 'action' => 'browse']);
@@ -210,6 +248,7 @@ class IndexController extends AbstractActionController {
       'totals' => $totals,
       'timezone' => $timezone,
       'jobs' => $jobs,
+      'confirmForm' => $this->getForm(ConfirmForm::class),
     ]);
     $vm->setTemplate('mroonga-search/admin/diagnostics');
     return $vm;
@@ -245,7 +284,10 @@ class IndexController extends AbstractActionController {
       $values['queries'] = (string) $this->params()->fromPost('queries', $defaults['queries']);
 
       $queries = $this->parseBenchmarkQueries($values['queries']);
-      if (!$queries) {
+      if (!$this->hasValidToken()) {
+        $errors[] = 'Invalid or expired form. Please reload this page and try again.';
+      }
+      elseif (!$queries) {
         $errors[] = 'No benchmark queries were provided.';
       }
       else {
@@ -264,6 +306,7 @@ class IndexController extends AbstractActionController {
       'summary' => $summary,
       'results' => $results,
       'errors' => $errors,
+      'confirmForm' => $this->getForm(ConfirmForm::class),
     ]);
     $vm->setTemplate('mroonga-search/admin/benchmark');
     return $vm;
@@ -537,6 +580,9 @@ class IndexController extends AbstractActionController {
    * Then dispatch a fulltext reindex job.
    */
   public function switchEngineAction() {
+    if (!$this->isConfirmedPost()) {
+      return $this->redirect()->toRoute('admin/mroonga-diagnostics');
+    }
     $services = $this->getEvent()->getApplication()->getServiceManager();
     $conn = $services->get('Omeka\\Connection');
     $logger = NULL;
@@ -655,6 +701,9 @@ class IndexController extends AbstractActionController {
    * Switch fulltext_search back to InnoDB (fallback mode) to test behavior.
    */
   public function switchInnoDbAction() {
+    if (!$this->isConfirmedPost()) {
+      return $this->redirect()->toRoute('admin/mroonga-diagnostics');
+    }
     $services = $this->getEvent()->getApplication()->getServiceManager();
     $conn = $services->get('Omeka\\Connection');
     $logger = NULL;

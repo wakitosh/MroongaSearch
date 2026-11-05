@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.4.1] - 2026-11-05
+
+### Security
+- Reindex and engine-switch operations ran on a plain GET request with no token, so a link opened by a signed-in administrator could empty part of the index or alter `fulltext_search`. They now require POST with a CSRF token, and the links on the Diagnostics page are buttons in forms. Any other request returns to Diagnostics with a message and changes nothing.
+- The benchmark form now requires a CSRF token as well.
+
+### Upgrade notes
+- Bookmarks or scripts that open `/admin/mroonga-reindex-*` or `/admin/mroonga-switch-*` directly no longer start the operation. Use the buttons on the Diagnostics page.
+
+---
+### セキュリティ
+- 再インデックスとエンジン切替は、トークンなしのGETリクエストで実行されていた。そのため、ログイン中の管理者がリンクを開くだけで索引の一部が空になったり `fulltext_search` が変更されたりする可能性があった。POSTとCSRFトークンを必須とし、診断ページのリンクをフォームのボタンに置き換えた。それ以外のリクエストは何も変更せず、メッセージとともに診断ページへ戻る。
+- ベンチマークのフォームにもCSRFトークンを必須とした。
+
+### アップグレード時の注意
+- `/admin/mroonga-reindex-*` や `/admin/mroonga-switch-*` を直接開くブックマークやスクリプトでは、処理が開始されなくなった。診断ページのボタンを使用すること。
+
 ## [4.4.0] - 2026-09-11
 
 ### Fixed

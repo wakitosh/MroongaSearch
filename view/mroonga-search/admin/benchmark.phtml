@@ -7,6 +7,7 @@ $summary = is_array($this->summary ?? null) ? $this->summary : [];
 $results = is_array($this->results ?? null) ? $this->results : [];
 $errors = is_array($this->errors ?? null) ? $this->errors : [];
 $escape = fn($value) => $this->escapeHtml((string) $value);
+$confirmForm = $this->confirmForm ?? null;
 ?>
 <?= $this->pageTitle('Mroonga Search Benchmark'); ?>
 
@@ -52,6 +53,7 @@ $escape = fn($value) => $this->escapeHtml((string) $value);
 <?php endif; ?>
 
 <form class="msb-form" method="post" action="<?= $this->escapeHtml($this->url('admin/mroonga-benchmark')); ?>">
+  <?= $confirmForm ? $this->formElement($confirmForm->get($confirmForm->getName() . '_csrf')) : ''; ?>
   <div class="msb-grid">
     <label class="msb-key" for="resource">Resource</label>
     <select id="resource" name="resource">
