@@ -94,6 +94,13 @@ class Module extends AbstractModule {
   public function onBootstrap(MvcEvent $event): void {
     parent::onBootstrap($event);
     $application = $event->getApplication();
+    // Reindexing and engine switching act on the whole installation, so they
+    // are for global administrators. Omeka grants site_admin everything by
+    // default, which makes an explicit denial the only way to say so.
+    $application->getServiceManager()->get('Omeka\\Acl')->deny('site_admin', [
+      'MroongaSearch\\Controller\\Admin\\Index',
+      Controller\Admin\IndexController::class,
+    ]);
     // If the DB doesn't have Mroonga but the table engine is Mroonga,
     // revert it to InnoDB to keep search working.
     try {

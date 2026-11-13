@@ -6,6 +6,21 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning where possible.
 記法は Keep a Changelog に準拠し、可能な限り Semantic Versioning を採用しています。
 
+## [4.4.2] - 2026-11-13
+
+### Security
+- The diagnostics page, reindexing, engine switching and the benchmark are now closed to the `site_admin` role. They act on the whole installation, but Omeka grants `site_admin` every permission unless one is denied explicitly, so these pages were open to it.
+
+### Upgrade notes
+- Users with the `site_admin` role no longer see the "Mroonga Search" menu entry. Only global administrators can use these pages.
+
+---
+### セキュリティ
+- 診断ページ、再インデックス、エンジン切替、ベンチマークを `site_admin` ロールでは使えないようにした。いずれもインストール全体に作用する操作だが、Omeka は明示的に拒否しない限り `site_admin` にすべての権限を与えるため、これらのページが開ける状態だった。
+
+### アップグレード時の注意
+- `site_admin` ロールのユーザーには「Mroonga Search」のメニュー項目が表示されなくなる。これらのページを使えるのは全体管理者だけとなる。
+
 ## [4.4.1] - 2026-11-05
 
 ### Security
